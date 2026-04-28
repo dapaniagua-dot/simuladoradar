@@ -6,37 +6,59 @@
   <title>Simulador de Radar — Aula</title>
   <link rel="stylesheet" href="/styles/global.css" />
 </head>
-<body>
+<body class="aula-body">
   <header class="topbar">
     <h1 id="sesionTitulo">Aula</h1>
     <div class="topbar-right">
-      <a href="/dashboard.html" class="link-button">← Salir de la sesión</a>
+      <span id="connBadge" class="badge badge-preparada">conectando...</span>
+      <a href="/dashboard.html" class="link-button">← Salir</a>
       <span id="userBadge"></span>
       <button id="logoutBtn" type="button">Salir</button>
     </div>
   </header>
-  <main class="container container-wide">
-    <section class="sesion-info">
-      <p>
-        <strong>Carta:</strong> <span id="cartaNombre">—</span>
-        &nbsp;·&nbsp;
-        <strong>Tu buque:</strong> <span id="ownshipBadge" class="badge">—</span>
-      </p>
-      <p id="descripcionEl" class="placeholder"></p>
-    </section>
 
-    <section class="carta-controls">
-      <span class="placeholder">
-        Por ahora solo ves la carta. Los controles de mando y el radar se incorporan en los próximos releases.
-      </span>
-      <span id="cartaInfo" class="placeholder"></span>
-    </section>
-
-    <section class="carta-viewport">
+  <main class="aula-main">
+    <section class="aula-carta">
       <div id="loadingMsg" class="placeholder">Cargando aula...</div>
       <canvas id="cartaCanvas" hidden></canvas>
     </section>
+
+    <aside class="aula-mando">
+      <h2>Buque propio <span id="ownshipBadge" class="badge">—</span></h2>
+
+      <div class="hud">
+        <div class="hud-cell">
+          <label>Heading</label>
+          <span id="hudHeading">—</span>
+        </div>
+        <div class="hud-cell">
+          <label>Velocidad</label>
+          <span id="hudVel">—</span>
+        </div>
+        <div class="hud-cell">
+          <label>Vel. ordenada</label>
+          <span id="hudVelObj">—</span>
+        </div>
+        <div class="hud-cell">
+          <label>Posición</label>
+          <span id="hudPos">—</span>
+        </div>
+      </div>
+
+      <h3>Telégrafo</h3>
+      <div id="telegrafoBotones" class="telegrafo-grid"></div>
+
+      <h3>Timón <span class="rudder-value" id="rudderValor">0°</span></h3>
+      <input type="range" id="rudderSlider" min="-35" max="35" step="1" value="0" class="rudder-slider" />
+      <div class="rudder-labels">
+        <span>BABOR (-)</span>
+        <span>0°</span>
+        <span>(+) ESTRIBOR</span>
+      </div>
+      <button type="button" id="rudderCenter" class="rudder-center">Centrar timón</button>
+    </aside>
   </main>
+
   <script type="module" src="/aula.ts"></script>
 </body>
 </html>

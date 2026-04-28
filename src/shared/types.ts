@@ -80,6 +80,51 @@ export interface SesionDelAlumno {
   openedAt: string | null;
 }
 
+// =============================================================================
+// Tipos para la simulación (compartidos cliente ↔ server vía Socket.IO)
+// =============================================================================
+
+export type TelegrafoId =
+  | 'FAS'
+  | 'HAS'
+  | 'SAS'
+  | 'DSAS'
+  | 'STOP'
+  | 'DSAH'
+  | 'SAH'
+  | 'HAH'
+  | 'FAH';
+
+export interface PosicionTelegrafo {
+  id: TelegrafoId;
+  nombre: string;
+  velObjetivoKn: number;
+}
+
+// Estado público de un buque que el server emite por tick.
+export interface EstadoBuqueDTO {
+  ownshipIndex: number;
+  modeloSigla: string;
+  lat: number;
+  lon: number;
+  headingDeg: number;
+  velocidadKn: number;
+  telegrafo: TelegrafoId;
+  velObjetivoKn: number;
+  rudderDeg: number;
+}
+
+export interface TickPayload {
+  t: number;
+  buques: EstadoBuqueDTO[];
+}
+
+// Comandos que el cliente envía al server por Socket.IO.
+export interface ShipControlPayload {
+  telegrafo?: TelegrafoId;
+  rudderDeg?: number;
+}
+
 // Resultado del parser de cartas (.map). Coordenadas siempre en grados decimales
 // (positivo norte / este, negativo sur / oeste).
 export interface CartaCoord {

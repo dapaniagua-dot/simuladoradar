@@ -11,6 +11,7 @@ import { adminRouter } from './routes/admin.js';
 import { escenariosRouter } from './routes/escenarios.js';
 import { sesionesRouter } from './routes/sesiones.js';
 import { aulaRouter } from './routes/aula.js';
+import { setupSockets } from './sockets/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,24 +38,23 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
 
 const PgSession = connectPgSimple(session);
-app.use(
-  session({
-    store: new PgSession({
-      conString: DATABASE_URL,
-      tableName: 'session',
-      createTableIfMissing: true,
-    }),
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 8, // 8 horas
-    },
+const sessionMiddleware = session({
+  store: new PgSession({
+    conString: DATABASE_URL,
+    tableName: 'session',
+    createTableIfMissing: true,
   }),
-);
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: NODE_ENV === 'production',
+    maxAge: 1000 * 60 * 60 * 8, // 8 horas
+  },
+});
+app.use(sessionMiddleware);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, ts: Date.now() });
@@ -66,8 +66,7 @@ app.use('/api/escenarios', escenariosRouter);
 app.use('/api/sesiones', sesionesRouter);
 app.use('/api/aula', aulaRouter);
 
-// Servir /public siempre (en dev y prod): incluye los recursos estáticos de
-// cartas náuticas (PNG) que carga el visualizador.
+// /public se sirve siempre (cartas náuticas y cualquier asset estático).
 const publicDir = path.resolve(__dirname, '../../public');
 app.use(express.static(publicDir));
 
@@ -79,12 +78,7 @@ if (NODE_ENV === 'production') {
   });
 }
 
-io.on('connection', (socket) => {
-  console.log(`[socket] conectado: ${socket.id}`);
-  socket.on('disconnect', () => {
-    console.log(`[socket] desconectado: ${socket.id}`);
-  });
-});
+setupSockets(io, sessionMiddleware);
 
 server.listen(PORT, () => {
   console.log(`[server] escuchando en http://localhost:${PORT} (${NODE_ENV})`);

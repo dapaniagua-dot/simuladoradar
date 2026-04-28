@@ -4,6 +4,7 @@ import { eq, desc, and, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { sesiones, escenarios, participaciones, users } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/requireAuth.js';
+import { registry } from '../simulacion/registry.js';
 import {
   MAX_OWNSHIPS_POR_SESION,
   type Participacion,
@@ -169,6 +170,8 @@ sesionesRouter.post('/:id/abrir', requireRole('profesor', 'admin'), async (req, 
     .update(sesiones)
     .set({ estado: 'abierta', openedAt: new Date(), updatedAt: new Date() })
     .where(eq(sesiones.id, id));
+  // Levanta el motor de simulación de esta sesión.
+  await registry.crearYArrancar(id);
   res.json({ ok: true });
 });
 
@@ -192,6 +195,8 @@ sesionesRouter.post('/:id/cerrar', requireRole('profesor', 'admin'), async (req,
     .update(sesiones)
     .set({ estado: 'finalizada', closedAt: new Date(), updatedAt: new Date() })
     .where(eq(sesiones.id, id));
+  // Termina el motor de simulación y avisa a los clientes vía Socket.IO.
+  registry.destruir(id);
   res.json({ ok: true });
 });
 

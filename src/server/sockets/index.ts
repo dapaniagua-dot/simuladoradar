@@ -1,0 +1,113 @@
+// Configuración de Socket.IO: comparte la sesión Express, valida que el
+// alumno esté autorizado a entrar a la sesión, y hace el ruteo de eventos
+// al Mundo correspondiente.
+
+import type { Server as SocketIOServer } from 'socket.io';
+import type { RequestHandler } from 'express';
+import { eq } from 'drizzle-orm';
+import { db } from '../db/index.js';
+import { sesiones, participaciones, users } from '../db/schema.js';
+import { registry, roomDeSesion } from '../simulacion/registry.js';
+import type { ShipControlPayload } from '../../shared/types.js';
+
+// Contexto que cada conexión socket tiene asociado tras autenticar.
+interface SocketCtx {
+  userId: number;
+  role: 'admin' | 'profesor' | 'alumno';
+  sesionId: number;
+  ownshipIndex?: number; // sólo para alumnos
+}
+
+export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandler): void {
+  registry.setSocketServer(io);
+
+  // Reusar la sesión Express en Socket.IO (cookie HTTPOnly + connect.sid).
+  // Express RequestHandler != socket.io middleware, pero engine.use lo soporta.
+  io.engine.use(sessionMiddleware as never);
+
+  io.use(async (socket, next) => {
+    try {
+      const req = socket.request as { session?: { userId?: number } };
+      const userId = req.session?.userId;
+      if (!userId) return next(new Error('No autenticado'));
+
+      // ¿A qué sesión querés conectarte? Lo pasamos por handshake auth.
+      const auth = socket.handshake.auth as { sesionId?: number };
+      const sesionId = Number(auth.sesionId);
+      if (!Number.isFinite(sesionId) || sesionId <= 0) {
+        return next(new Error('Falta sesionId en el handshake'));
+      }
+
+      const userRows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const user = userRows[0];
+      if (!user) return next(new Error('Usuario inválido'));
+
+      // Validar acceso a la sesión:
+      //  - admin / profesor dueño: acceden siempre
+      //  - alumno: debe estar asignado y la sesión estar 'abierta'
+      const sesionRows = await db.select().from(sesiones).where(eq(sesiones.id, sesionId)).limit(1);
+      const ses = sesionRows[0];
+      if (!ses) return next(new Error('Sesión no encontrada'));
+
+      const ctx: SocketCtx = {
+        userId: user.id,
+        role: user.role as SocketCtx['role'],
+        sesionId,
+      };
+
+      if (user.role === 'admin') {
+        // OK
+      } else if (user.role === 'profesor') {
+        if (ses.profesorId !== user.id) return next(new Error('No autorizado'));
+      } else if (user.role === 'alumno') {
+        if (ses.estado !== 'abierta') return next(new Error("La sesión no está abierta"));
+        const partRows = await db
+          .select()
+          .from(participaciones)
+          .where(eq(participaciones.sesionId, sesionId))
+          .limit(50);
+        const mia = partRows.find((p) => p.alumnoId === user.id);
+        if (!mia) return next(new Error('No estás asignado a esta sesión'));
+        ctx.ownshipIndex = mia.ownshipIndex;
+      } else {
+        return next(new Error('Rol desconocido'));
+      }
+
+      (socket.data as { ctx: SocketCtx }).ctx = ctx;
+      next();
+    } catch (err) {
+      next(err instanceof Error ? err : new Error('Error de autenticación'));
+    }
+  });
+
+  io.on('connection', (socket) => {
+    const ctx = (socket.data as { ctx: SocketCtx }).ctx;
+    const room = roomDeSesion(ctx.sesionId);
+    void socket.join(room);
+
+    // Mandar el estado actual al recién conectado, para que pinte algo
+    // mientras espera el próximo tick.
+    const mundo = registry.obtener(ctx.sesionId);
+    if (mundo) {
+      socket.emit('world:tick', mundo.estadoActual());
+    }
+
+    // Eventos del cliente
+    socket.on('ship:control', (payload: ShipControlPayload) => {
+      // Solo alumnos pueden mandar comandos a SU buque.
+      if (ctx.role !== 'alumno' || ctx.ownshipIndex === undefined) return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo) return;
+      if (typeof payload.telegrafo === 'string') {
+        mundo.setTelegrafo(ctx.ownshipIndex, payload.telegrafo);
+      }
+      if (typeof payload.rudderDeg === 'number' && Number.isFinite(payload.rudderDeg)) {
+        mundo.setRudder(ctx.ownshipIndex, payload.rudderDeg);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      // No-op; el alumno puede reconectarse y el Mundo sigue vivo en el server.
+    });
+  });
+}
