@@ -16,9 +16,12 @@
   </header>
   <main class="container">
     <section id="alumnoView" hidden>
-      <h2>Esperando que tu profesor habilite una sesión</h2>
-      <p>Cuando el profesor abra una sesión a la que estés asignado, vas a verla aparecer en esta pantalla automáticamente.</p>
-      <p class="placeholder">No tenés sesiones activas en este momento.</p>
+      <h2 id="alumnoHeading">Mis sesiones abiertas</h2>
+      <div id="sesionesAbiertas"></div>
+      <p id="sinSesionesMsg" class="placeholder" hidden>
+        No tenés sesiones abiertas en este momento.<br>
+        Cuando tu profesor habilite una sesión a la que estés asignado, va a aparecer acá automáticamente.
+      </p>
     </section>
     <section id="profesorView" hidden>
       <p>Acceso al panel del profesor.</p>

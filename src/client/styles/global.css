@@ -164,3 +164,70 @@ td a:hover { text-decoration: underline; }
   min-height: 400px;
 }
 .carta-viewport canvas { display: block; }
+
+.sesion-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin: 16px 0;
+}
+.sesion-panel h2 { margin-top: 0; font-size: 16px; }
+
+.alumnos-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.alumno-row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #0d1c2a;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.ownship-tag {
+  background: var(--accent);
+  color: #001b13;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 13px;
+  text-align: center;
+}
+.alumno-info { display: flex; flex-direction: column; }
+.alumno-info small { color: var(--muted); font-size: 12px; }
+.btn-quitar {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.btn-quitar:hover { background: var(--danger); color: #200; }
+
+.add-alumno-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.add-alumno-form select { flex: 1; min-width: 240px; }
+.add-alumno-form button { white-space: nowrap; }
+
+.btn-action {
+  margin-left: 12px;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.btn-abrir { background: var(--accent); color: #001b13; }
+.btn-cerrar { background: var(--danger); color: #200; }
+
+.sesion-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+.sesion-card-body { flex: 1; }
+.sesion-card h3 { margin: 0 0 8px; font-size: 16px; }
+.sesion-card p { margin: 4px 0; }

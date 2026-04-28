@@ -18,8 +18,26 @@
   <main class="container container-wide">
     <section class="sesion-info">
       <p><strong>Carta:</strong> <span id="cartaNombre">—</span></p>
-      <p><strong>Estado:</strong> <span id="estadoBadge">—</span></p>
+      <p>
+        <strong>Estado:</strong> <span id="estadoBadge">—</span>
+        <button id="btnAbrir" type="button" class="btn-action btn-abrir" hidden>Abrir sesión</button>
+        <button id="btnCerrar" type="button" class="btn-action btn-cerrar" hidden>Cerrar sesión</button>
+      </p>
       <p id="descripcionEl" class="placeholder"></p>
+    </section>
+
+    <section class="sesion-panel">
+      <h2>Alumnos asignados</h2>
+      <div id="alumnosLista" class="alumnos-lista">
+        <p class="placeholder">Cargando...</p>
+      </div>
+      <form id="addAlumnoForm" class="add-alumno-form">
+        <select name="alumnoId" required>
+          <option value="">Agregar alumno...</option>
+        </select>
+        <button type="submit">Agregar</button>
+        <p id="addAlumnoError" class="auth-error" hidden></p>
+      </form>
     </section>
 
     <section class="carta-controls">

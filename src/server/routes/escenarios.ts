@@ -28,8 +28,9 @@ function publicCartasDir(): string {
   return candidatos[0]!; // El primer candidato funciona tanto en src/ como en dist/
 }
 
-// Solo profesores y admins ven el catálogo. Los alumnos ven cartas a través
-// de la sesión a la que están asignados (cuando el modelo de sesiones lo permita).
+// El catálogo de escenarios solo lo ven profesores y admins. Los alumnos
+// acceden a una carta concreta vía /api/aula/:sesionId cuando están
+// asignados a una sesión abierta.
 escenariosRouter.use(requireAuth);
 
 escenariosRouter.get('/', requireRole('profesor', 'admin'), async (_req, res) => {

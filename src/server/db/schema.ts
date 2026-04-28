@@ -1,4 +1,13 @@
-import { pgTable, serial, varchar, integer, text, timestamp, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  serial,
+  varchar,
+  integer,
+  text,
+  timestamp,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 // Roles del sistema. Validados también por Zod en la capa de aplicación
 // (Postgres no usa enum nativo acá para simplificar las migraciones).
@@ -75,3 +84,32 @@ export const sesiones = pgTable(
 
 export type DbSesion = typeof sesiones.$inferSelect;
 export type NewDbSesion = typeof sesiones.$inferInsert;
+
+// Cada alumno asignado a una sesión queda registrado acá. ownshipIndex
+// determina qué buque propio (1..5) le toca operar dentro de la simulación.
+// El máximo de 5 lo refuerza la lógica de aplicación al insertar.
+export const participaciones = pgTable(
+  'participaciones',
+  {
+    id: serial('id').primaryKey(),
+    sesionId: integer('sesion_id')
+      .notNull()
+      .references(() => sesiones.id, { onDelete: 'cascade' }),
+    alumnoId: integer('alumno_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    ownshipIndex: integer('ownship_index').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Un alumno no puede estar dos veces en la misma sesión.
+    uniqAlumnoSesion: uniqueIndex('participaciones_alumno_sesion_uniq').on(table.sesionId, table.alumnoId),
+    // Dos alumnos no pueden compartir el mismo OwnShip dentro de una sesión.
+    uniqOwnship: uniqueIndex('participaciones_ownship_uniq').on(table.sesionId, table.ownshipIndex),
+    sesionIdx: index('participaciones_sesion_idx').on(table.sesionId),
+    alumnoIdx: index('participaciones_alumno_idx').on(table.alumnoId),
+  }),
+);
+
+export type DbParticipacion = typeof participaciones.$inferSelect;
+export type NewDbParticipacion = typeof participaciones.$inferInsert;

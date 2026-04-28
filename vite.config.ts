@@ -14,6 +14,7 @@ export default defineConfig({
         admin: resolve(__dirname, 'src/client/admin.html'),
         misSesiones: resolve(__dirname, 'src/client/mis-sesiones.html'),
         sesion: resolve(__dirname, 'src/client/sesion.html'),
+        aula: resolve(__dirname, 'src/client/aula.html'),
       },
     },
   },

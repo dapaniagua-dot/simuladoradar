@@ -10,6 +10,7 @@ import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
 import { escenariosRouter } from './routes/escenarios.js';
 import { sesionesRouter } from './routes/sesiones.js';
+import { aulaRouter } from './routes/aula.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +64,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/escenarios', escenariosRouter);
 app.use('/api/sesiones', sesionesRouter);
+app.use('/api/aula', aulaRouter);
 
 // Servir /public siempre (en dev y prod): incluye los recursos estáticos de
 // cartas náuticas (PNG) que carga el visualizador.

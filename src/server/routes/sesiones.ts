@@ -1,10 +1,15 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { sesiones, escenarios } from '../db/schema.js';
+import { sesiones, escenarios, participaciones, users } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/requireAuth.js';
-import type { Sesion } from '../../shared/types.js';
+import {
+  MAX_OWNSHIPS_POR_SESION,
+  type Participacion,
+  type Sesion,
+  type SesionDelAlumno,
+} from '../../shared/types.js';
 
 export const sesionesRouter: Router = Router();
 
@@ -16,8 +21,43 @@ const createSesionSchema = z.object({
   escenarioId: z.number().int().positive(),
 });
 
-// Lista las sesiones del profesor logueado, más reciente primero.
-// Admin ve todas las sesiones (las suyas y las de los demás).
+// =============================================================================
+// Endpoints del ALUMNO (van primero porque son más específicos en el path)
+// =============================================================================
+
+// Lista las sesiones donde el alumno está asignado y que están en estado 'abierta'.
+sesionesRouter.get('/mis-sesiones', requireRole('alumno'), async (req, res) => {
+  const me = req.user!;
+  const rows = await db
+    .select({
+      id: sesiones.id,
+      nombre: sesiones.nombre,
+      descripcion: sesiones.descripcion,
+      escenarioNombre: escenarios.nombre,
+      ownshipIndex: participaciones.ownshipIndex,
+      openedAt: sesiones.openedAt,
+    })
+    .from(participaciones)
+    .innerJoin(sesiones, eq(participaciones.sesionId, sesiones.id))
+    .leftJoin(escenarios, eq(sesiones.escenarioId, escenarios.id))
+    .where(and(eq(participaciones.alumnoId, me.id), eq(sesiones.estado, 'abierta')))
+    .orderBy(desc(sesiones.openedAt));
+  const dto: SesionDelAlumno[] = rows.map((r) => ({
+    id: r.id,
+    nombre: r.nombre,
+    descripcion: r.descripcion,
+    escenarioNombre: r.escenarioNombre ?? '(sin nombre)',
+    ownshipIndex: r.ownshipIndex,
+    openedAt: r.openedAt ? r.openedAt.toISOString() : null,
+  }));
+  res.json({ sesiones: dto });
+});
+
+// =============================================================================
+// Endpoints del PROFESOR / ADMIN
+// =============================================================================
+
+// Lista mis sesiones (todas si soy admin).
 sesionesRouter.get('/', requireRole('profesor', 'admin'), async (req, res) => {
   const me = req.user!;
   const filter = me.role === 'admin' ? undefined : eq(sesiones.profesorId, me.id);
@@ -41,7 +81,6 @@ sesionesRouter.get('/', requireRole('profesor', 'admin'), async (req, res) => {
   res.json({ sesiones: rows.map(toSesionDTO) });
 });
 
-// Crea una sesión nueva. Sólo profesores y admins.
 sesionesRouter.post('/', requireRole('profesor', 'admin'), async (req, res) => {
   const parsed = createSesionSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -49,7 +88,6 @@ sesionesRouter.post('/', requireRole('profesor', 'admin'), async (req, res) => {
     return;
   }
   const me = req.user!;
-  // Validar que el escenario existe.
   const escenarioRows = await db
     .select()
     .from(escenarios)
@@ -76,7 +114,7 @@ sesionesRouter.post('/', requireRole('profesor', 'admin'), async (req, res) => {
   res.status(201).json({ sesion: { ...created, escenarioNombre: escenarioRows[0]!.nombre } });
 });
 
-// Detalle de una sesión. Profesor dueño o admin.
+// Detalle. Profesor dueño o admin.
 sesionesRouter.get('/:id', requireRole('profesor', 'admin'), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -110,6 +148,233 @@ sesionesRouter.get('/:id', requireRole('profesor', 'admin'), async (req, res) =>
   }
   res.json({ sesion: toSesionDTO(row), escenarioSlug: row.escenarioSlug });
 });
+
+// Cambia estado a 'abierta'. Sólo si está en 'preparada'.
+sesionesRouter.post('/:id/abrir', requireRole('profesor', 'admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'ID inválido' });
+    return;
+  }
+  const ses = await loadSesionDelDueno(req, id);
+  if (!ses) {
+    res.status(404).json({ error: 'Sesión no encontrada' });
+    return;
+  }
+  if (ses.estado !== 'preparada') {
+    res.status(409).json({ error: `No se puede abrir desde estado '${ses.estado}'` });
+    return;
+  }
+  await db
+    .update(sesiones)
+    .set({ estado: 'abierta', openedAt: new Date(), updatedAt: new Date() })
+    .where(eq(sesiones.id, id));
+  res.json({ ok: true });
+});
+
+// Cambia estado a 'finalizada'. Desde 'abierta' o 'preparada'.
+sesionesRouter.post('/:id/cerrar', requireRole('profesor', 'admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'ID inválido' });
+    return;
+  }
+  const ses = await loadSesionDelDueno(req, id);
+  if (!ses) {
+    res.status(404).json({ error: 'Sesión no encontrada' });
+    return;
+  }
+  if (ses.estado === 'finalizada') {
+    res.status(409).json({ error: 'La sesión ya está finalizada' });
+    return;
+  }
+  await db
+    .update(sesiones)
+    .set({ estado: 'finalizada', closedAt: new Date(), updatedAt: new Date() })
+    .where(eq(sesiones.id, id));
+  res.json({ ok: true });
+});
+
+// Lista los alumnos asignados a una sesión.
+sesionesRouter.get('/:id/participaciones', requireRole('profesor', 'admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'ID inválido' });
+    return;
+  }
+  const ses = await loadSesionDelDueno(req, id);
+  if (!ses) {
+    res.status(404).json({ error: 'Sesión no encontrada' });
+    return;
+  }
+  const rows = await db
+    .select({
+      id: participaciones.id,
+      sesionId: participaciones.sesionId,
+      alumnoId: participaciones.alumnoId,
+      alumnoEmail: users.email,
+      alumnoNombre: users.nombre,
+      ownshipIndex: participaciones.ownshipIndex,
+      createdAt: participaciones.createdAt,
+    })
+    .from(participaciones)
+    .innerJoin(users, eq(participaciones.alumnoId, users.id))
+    .where(eq(participaciones.sesionId, id))
+    .orderBy(participaciones.ownshipIndex);
+  const dto: Participacion[] = rows.map((r) => ({
+    id: r.id,
+    sesionId: r.sesionId,
+    alumnoId: r.alumnoId,
+    alumnoEmail: r.alumnoEmail,
+    alumnoNombre: r.alumnoNombre,
+    ownshipIndex: r.ownshipIndex,
+    createdAt: r.createdAt.toISOString(),
+  }));
+  res.json({ participaciones: dto });
+});
+
+const addParticipacionSchema = z.object({ alumnoId: z.number().int().positive() });
+
+// Agrega un alumno a la sesión. Le asigna automáticamente el siguiente
+// ownshipIndex libre (1..MAX). Falla si ya hay 5 alumnos o si el alumno
+// ya está asignado.
+sesionesRouter.post('/:id/participaciones', requireRole('profesor', 'admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'ID inválido' });
+    return;
+  }
+  const parsed = addParticipacionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'alumnoId inválido' });
+    return;
+  }
+  const ses = await loadSesionDelDueno(req, id);
+  if (!ses) {
+    res.status(404).json({ error: 'Sesión no encontrada' });
+    return;
+  }
+  if (ses.estado === 'finalizada') {
+    res.status(409).json({ error: 'No se pueden agregar alumnos a una sesión finalizada' });
+    return;
+  }
+  // Validar que el usuario es alumno.
+  const alumnoRows = await db.select().from(users).where(eq(users.id, parsed.data.alumnoId)).limit(1);
+  const alumno = alumnoRows[0];
+  if (!alumno || alumno.role !== 'alumno') {
+    res.status(400).json({ error: 'El usuario no existe o no es alumno' });
+    return;
+  }
+  // Buscar el próximo ownshipIndex libre.
+  const ocupados = await db
+    .select({ idx: participaciones.ownshipIndex })
+    .from(participaciones)
+    .where(eq(participaciones.sesionId, id));
+  const ocupadosSet = new Set(ocupados.map((o) => o.idx));
+  if (ocupadosSet.size >= MAX_OWNSHIPS_POR_SESION) {
+    res.status(409).json({ error: `La sesión ya tiene ${MAX_OWNSHIPS_POR_SESION} alumnos (máximo)` });
+    return;
+  }
+  let nextIdx = 1;
+  while (ocupadosSet.has(nextIdx) && nextIdx <= MAX_OWNSHIPS_POR_SESION) nextIdx++;
+  try {
+    const [created] = await db
+      .insert(participaciones)
+      .values({ sesionId: id, alumnoId: alumno.id, ownshipIndex: nextIdx })
+      .returning();
+    res.status(201).json({
+      participacion: {
+        id: created!.id,
+        sesionId: created!.sesionId,
+        alumnoId: created!.alumnoId,
+        alumnoEmail: alumno.email,
+        alumnoNombre: alumno.nombre,
+        ownshipIndex: created!.ownshipIndex,
+        createdAt: created!.createdAt.toISOString(),
+      } satisfies Participacion,
+    });
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {
+      res.status(409).json({ error: 'Este alumno ya está asignado a la sesión' });
+      return;
+    }
+    throw err;
+  }
+});
+
+// Quita una participación.
+sesionesRouter.delete(
+  '/:id/participaciones/:partId',
+  requireRole('profesor', 'admin'),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    const partId = Number(req.params.partId);
+    if (!Number.isFinite(id) || !Number.isFinite(partId)) {
+      res.status(400).json({ error: 'ID inválido' });
+      return;
+    }
+    const ses = await loadSesionDelDueno(req, id);
+    if (!ses) {
+      res.status(404).json({ error: 'Sesión no encontrada' });
+      return;
+    }
+    if (ses.estado === 'finalizada') {
+      res.status(409).json({ error: 'No se pueden modificar alumnos de una sesión finalizada' });
+      return;
+    }
+    await db
+      .delete(participaciones)
+      .where(and(eq(participaciones.id, partId), eq(participaciones.sesionId, id)));
+    res.status(204).end();
+  },
+);
+
+// Lista alumnos del sistema que NO están asignados a esta sesión.
+// Sirve para poblar el dropdown "Agregar alumno".
+sesionesRouter.get(
+  '/:id/alumnos-disponibles',
+  requireRole('profesor', 'admin'),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: 'ID inválido' });
+      return;
+    }
+    const ses = await loadSesionDelDueno(req, id);
+    if (!ses) {
+      res.status(404).json({ error: 'Sesión no encontrada' });
+      return;
+    }
+    // Subquery: IDs de alumnos ya asignados a esta sesión.
+    const asignados = db
+      .select({ id: participaciones.alumnoId })
+      .from(participaciones)
+      .where(eq(participaciones.sesionId, id));
+    const rows = await db
+      .select({ id: users.id, email: users.email, nombre: users.nombre })
+      .from(users)
+      .where(and(eq(users.role, 'alumno'), sql`${users.id} NOT IN ${asignados}`))
+      .orderBy(users.nombre);
+    res.json({ alumnos: rows });
+  },
+);
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+// Devuelve la sesión SI el usuario actual es su dueño (profesor) o es admin.
+// Si no, devuelve null. Sirve para autorizar acciones de modificación.
+async function loadSesionDelDueno(req: Request, id: number) {
+  const me = req.user!;
+  const filterByOwner = me.role === 'admin' ? undefined : eq(sesiones.profesorId, me.id);
+  const rows = await db
+    .select()
+    .from(sesiones)
+    .where(filterByOwner ? and(eq(sesiones.id, id), filterByOwner) : eq(sesiones.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
 
 function toSesionDTO(row: {
   id: number;

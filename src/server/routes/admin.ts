@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { hashPassword, toPublicUser } from '../auth.js';
@@ -17,8 +18,11 @@ const createUserSchema = z.object({
   role: z.enum(ROLES),
 });
 
-adminRouter.get('/users', async (_req, res) => {
-  const rows = await db.select().from(users).orderBy(users.id);
+adminRouter.get('/users', async (req, res) => {
+  const roleFilter = typeof req.query.role === 'string' ? req.query.role : null;
+  const rows = roleFilter && (ROLES as readonly string[]).includes(roleFilter)
+    ? await db.select().from(users).where(eq(users.role, roleFilter)).orderBy(users.nombre)
+    : await db.select().from(users).orderBy(users.id);
   res.json({ users: rows.map(toPublicUser) });
 });
 

@@ -57,6 +57,29 @@ export interface CreateSesionRequest {
   escenarioId: number;
 }
 
+export const MAX_OWNSHIPS_POR_SESION = 5;
+
+export interface Participacion {
+  id: number;
+  sesionId: number;
+  alumnoId: number;
+  alumnoEmail: string;
+  alumnoNombre: string;
+  ownshipIndex: number;
+  createdAt: string;
+}
+
+// El alumno ve esto cuando pide /api/mis-sesiones: solo sesiones abiertas
+// donde fue asignado, con su número de OwnShip.
+export interface SesionDelAlumno {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+  escenarioNombre: string;
+  ownshipIndex: number;
+  openedAt: string | null;
+}
+
 // Resultado del parser de cartas (.map). Coordenadas siempre en grados decimales
 // (positivo norte / este, negativo sur / oeste).
 export interface CartaCoord {

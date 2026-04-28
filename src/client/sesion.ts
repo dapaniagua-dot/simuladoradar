@@ -1,4 +1,11 @@
-import type { CartaParseada, LoginResponse, Sesion } from '../shared/types.js';
+import type {
+  ApiError,
+  CartaParseada,
+  LoginResponse,
+  Participacion,
+  PublicUser,
+  Sesion,
+} from '../shared/types.js';
 
 const userBadge = document.getElementById('userBadge') as HTMLSpanElement;
 const titulo = document.getElementById('sesionTitulo') as HTMLHeadingElement;
@@ -9,7 +16,15 @@ const cartaInfo = document.getElementById('cartaInfo') as HTMLSpanElement;
 const loadingMsg = document.getElementById('loadingMsg') as HTMLDivElement;
 const canvas = document.getElementById('cartaCanvas') as HTMLCanvasElement;
 const toggleSegmentos = document.getElementById('toggleSegmentos') as HTMLInputElement;
+const btnAbrir = document.getElementById('btnAbrir') as HTMLButtonElement;
+const btnCerrar = document.getElementById('btnCerrar') as HTMLButtonElement;
+const alumnosLista = document.getElementById('alumnosLista') as HTMLDivElement;
+const addAlumnoForm = document.getElementById('addAlumnoForm') as HTMLFormElement;
+const addAlumnoSelect = addAlumnoForm.elements.namedItem('alumnoId') as HTMLSelectElement;
+const addAlumnoError = document.getElementById('addAlumnoError') as HTMLParagraphElement;
 
+let sesionId = 0;
+let sesionEstado: Sesion['estado'] = 'preparada';
 let cartaCache: CartaParseada | null = null;
 let imagenCache: HTMLImageElement | null = null;
 
@@ -20,16 +35,25 @@ async function init(): Promise<void> {
     return;
   }
   const { user } = (await me.json()) as LoginResponse;
+  if (user.role === 'alumno') {
+    location.href = '/dashboard.html';
+    return;
+  }
   userBadge.textContent = `${user.nombre} (${user.role})`;
 
   const params = new URLSearchParams(location.search);
-  const id = Number(params.get('id'));
-  if (!Number.isFinite(id) || id <= 0) {
+  sesionId = Number(params.get('id'));
+  if (!Number.isFinite(sesionId) || sesionId <= 0) {
     showError('Falta el ID de la sesión en la URL');
     return;
   }
 
-  const res = await fetch(`/api/sesiones/${id}`, { credentials: 'include' });
+  await loadSesion();
+  await Promise.all([loadParticipaciones(), loadAlumnosDisponibles(), loadCarta()]);
+}
+
+async function loadSesion(): Promise<void> {
+  const res = await fetch(`/api/sesiones/${sesionId}`, { credentials: 'include' });
   if (!res.ok) {
     showError('No se pudo cargar la sesión');
     return;
@@ -37,12 +61,27 @@ async function init(): Promise<void> {
   const { sesion } = (await res.json()) as { sesion: Sesion };
   titulo.textContent = sesion.nombre;
   cartaNombre.textContent = sesion.escenarioNombre;
-  estadoBadge.textContent = sesion.estado;
+  estadoBadge.textContent = sesion.estado.toUpperCase();
   estadoBadge.className = `badge badge-${sesion.estado}`;
   if (sesion.descripcion) {
     descripcionEl.textContent = sesion.descripcion;
   }
+  sesionEstado = sesion.estado;
+  refrescarBotonesEstado();
+}
 
+function refrescarBotonesEstado(): void {
+  btnAbrir.hidden = sesionEstado !== 'preparada';
+  btnCerrar.hidden = sesionEstado !== 'abierta';
+}
+
+async function loadCarta(): Promise<void> {
+  // Cargamos los detalles del escenario para obtener el id (ya tenemos
+  // el escenarioId desde loadSesion vía la API). Usamos el detalle de la sesión
+  // que ya devuelve los datos relevantes.
+  const res = await fetch(`/api/sesiones/${sesionId}`, { credentials: 'include' });
+  if (!res.ok) return;
+  const { sesion } = (await res.json()) as { sesion: Sesion };
   const escRes = await fetch(`/api/escenarios/${sesion.escenarioId}`, { credentials: 'include' });
   if (!escRes.ok) {
     showError('No se pudo cargar la carta náutica');
@@ -71,12 +110,117 @@ async function init(): Promise<void> {
   redraw();
 }
 
+async function loadParticipaciones(): Promise<void> {
+  const res = await fetch(`/api/sesiones/${sesionId}/participaciones`, { credentials: 'include' });
+  if (!res.ok) {
+    alumnosLista.innerHTML = `<p class="auth-error">Error cargando alumnos</p>`;
+    return;
+  }
+  const { participaciones } = (await res.json()) as { participaciones: Participacion[] };
+  if (participaciones.length === 0) {
+    alumnosLista.innerHTML = `<p class="placeholder">Todavía no hay alumnos asignados a esta sesión.</p>`;
+    return;
+  }
+  alumnosLista.innerHTML = '';
+  for (const p of participaciones) {
+    const row = document.createElement('div');
+    row.className = 'alumno-row';
+    const puedeQuitar = sesionEstado !== 'finalizada';
+    row.innerHTML = `
+      <span class="ownship-tag">OS-${p.ownshipIndex}</span>
+      <span class="alumno-info">
+        <strong>${escape(p.alumnoNombre)}</strong>
+        <small>${escape(p.alumnoEmail)}</small>
+      </span>
+      ${puedeQuitar ? `<button type="button" class="btn-quitar" data-id="${p.id}">Quitar</button>` : ''}
+    `;
+    alumnosLista.appendChild(row);
+  }
+  alumnosLista.querySelectorAll('.btn-quitar').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = Number((e.currentTarget as HTMLButtonElement).dataset.id);
+      if (!id) return;
+      await fetch(`/api/sesiones/${sesionId}/participaciones/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      await Promise.all([loadParticipaciones(), loadAlumnosDisponibles()]);
+    });
+  });
+}
+
+async function loadAlumnosDisponibles(): Promise<void> {
+  const res = await fetch(`/api/sesiones/${sesionId}/alumnos-disponibles`, { credentials: 'include' });
+  if (!res.ok) return;
+  const { alumnos } = (await res.json()) as { alumnos: Pick<PublicUser, 'id' | 'email' | 'nombre'>[] };
+  // Limpiar select manteniendo solo el placeholder.
+  while (addAlumnoSelect.options.length > 1) addAlumnoSelect.remove(1);
+  for (const a of alumnos) {
+    const opt = document.createElement('option');
+    opt.value = String(a.id);
+    opt.textContent = `${a.nombre} (${a.email})`;
+    addAlumnoSelect.appendChild(opt);
+  }
+  // Desactivar el form si la sesión está finalizada.
+  const finalizada = sesionEstado === 'finalizada';
+  addAlumnoSelect.disabled = finalizada;
+  (addAlumnoForm.querySelector('button[type="submit"]') as HTMLButtonElement).disabled = finalizada;
+}
+
+addAlumnoForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  addAlumnoError.hidden = true;
+  const alumnoId = Number(addAlumnoSelect.value);
+  if (!alumnoId) return;
+  const res = await fetch(`/api/sesiones/${sesionId}/participaciones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ alumnoId }),
+  });
+  if (!res.ok) {
+    const err = (await res.json()) as ApiError;
+    addAlumnoError.textContent = err.error ?? 'No se pudo agregar el alumno';
+    addAlumnoError.hidden = false;
+    return;
+  }
+  addAlumnoSelect.value = '';
+  await Promise.all([loadParticipaciones(), loadAlumnosDisponibles()]);
+});
+
+btnAbrir.addEventListener('click', async () => {
+  if (!confirm('¿Abrir la sesión? Los alumnos asignados van a poder entrar.')) return;
+  const res = await fetch(`/api/sesiones/${sesionId}/abrir`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = (await res.json()) as ApiError;
+    alert(err.error ?? 'No se pudo abrir');
+    return;
+  }
+  await loadSesion();
+  await Promise.all([loadParticipaciones(), loadAlumnosDisponibles()]);
+});
+
+btnCerrar.addEventListener('click', async () => {
+  if (!confirm('¿Cerrar la sesión? Los alumnos van a perder el acceso.')) return;
+  const res = await fetch(`/api/sesiones/${sesionId}/cerrar`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = (await res.json()) as ApiError;
+    alert(err.error ?? 'No se pudo cerrar');
+    return;
+  }
+  await loadSesion();
+  await Promise.all([loadParticipaciones(), loadAlumnosDisponibles()]);
+});
+
 function redraw(): void {
   if (!cartaCache || !imagenCache) return;
   const img = imagenCache;
-
-  // Ajustar el canvas al tamaño del viewport disponible, manteniendo la relación de aspecto.
-  // El raster de Mar del Plata es ~2400×3600 — lo escalamos a ancho útil del contenedor.
   const dpr = window.devicePixelRatio || 1;
   const containerWidth = canvas.parentElement!.clientWidth - 4;
   const escala = Math.min(1, containerWidth / img.naturalWidth);
@@ -95,23 +239,15 @@ function redraw(): void {
   ctx.drawImage(img, 0, 0);
 
   if (toggleSegmentos.checked) {
-    // Convertimos cada segmento de su sistema nativo (millas náuticas) a
-    // pixeles del raster usando la calibración por corners. El motor del radar
-    // de Melipal opera en millas; nosotros sólo necesitamos pintarlos arriba
-    // del PNG así que mapeamos linealmente al rectángulo de la carta.
     const { esquinaNW, esquinaSE, anchoMillas, altoMillas } = cartaCache;
     const anchoPix = esquinaSE.px - esquinaNW.px;
     const altoPix = esquinaSE.py - esquinaNW.py;
     const xMillaApix = anchoPix / anchoMillas;
     const yMillaApix = altoPix / altoMillas;
-
-    const millasToPx = (xMill: number, yMill: number): [number, number] => {
-      // X = millas al este desde NW → crece hacia la derecha
-      // Y = millas al norte desde SE → crece hacia arriba (los pixeles crecen hacia abajo)
-      const px = esquinaNW.px + xMill * xMillaApix;
-      const py = esquinaSE.py - yMill * yMillaApix;
-      return [px, py];
-    };
+    const millasToPx = (xMill: number, yMill: number): [number, number] => [
+      esquinaNW.px + xMill * xMillaApix,
+      esquinaSE.py - yMill * yMillaApix,
+    ];
 
     ctx.strokeStyle = 'rgba(255, 80, 80, 0.75)';
     ctx.lineWidth = 1.5 / escala;
@@ -136,6 +272,13 @@ function formatCoord(lat: number, lon: number): string {
   const ns = lat >= 0 ? 'N' : 'S';
   const ew = lon >= 0 ? 'E' : 'W';
   return `${Math.abs(lat).toFixed(4)}°${ns} ${Math.abs(lon).toFixed(4)}°${ew}`;
+}
+
+function escape(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => {
+    const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return map[c] ?? c;
+  });
 }
 
 toggleSegmentos.addEventListener('change', redraw);
