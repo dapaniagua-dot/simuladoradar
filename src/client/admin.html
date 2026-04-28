@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador de Radar — Administración</title>
+  <link rel="stylesheet" href="/styles/global.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Administración</h1>
+    <div class="topbar-right">
+      <span id="userBadge"></span>
+      <button id="logoutBtn" type="button">Salir</button>
+    </div>
+  </header>
+  <main class="container">
+    <section>
+      <h2>Crear usuario</h2>
+      <form id="createUserForm" class="form-grid">
+        <label>
+          <span>Email</span>
+          <input type="email" name="email" required />
+        </label>
+        <label>
+          <span>Nombre</span>
+          <input type="text" name="nombre" required />
+        </label>
+        <label>
+          <span>Contraseña (mín. 8 caracteres)</span>
+          <input type="text" name="password" minlength="8" required />
+        </label>
+        <label>
+          <span>Rol</span>
+          <select name="role" required>
+            <option value="alumno">Alumno</option>
+            <option value="profesor">Profesor</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <button type="submit">Crear</button>
+        <p id="createError" class="auth-error" hidden></p>
+      </form>
+    </section>
+    <section>
+      <h2>Usuarios</h2>
+      <table id="usersTable">
+        <thead>
+          <tr><th>ID</th><th>Email</th><th>Nombre</th><th>Rol</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+  <script type="module" src="/admin.ts"></script>
+</body>
+</html>

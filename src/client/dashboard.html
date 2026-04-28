@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador de Radar — Panel</title>
+  <link rel="stylesheet" href="/styles/global.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Simulador de Radar</h1>
+    <div class="topbar-right">
+      <span id="userBadge"></span>
+      <button id="logoutBtn" type="button">Salir</button>
+    </div>
+  </header>
+  <main class="container">
+    <section id="alumnoView" hidden>
+      <h2>Bienvenido</h2>
+      <p>Aquí vas a ver las sesiones de simulación a las que estés inscripto.</p>
+      <p class="placeholder">MVP 0: skeleton. La simulación se construye en MVP 1–5.</p>
+    </section>
+    <section id="profesorView" hidden>
+      <h2>Panel del profesor</h2>
+      <p>Desde acá vas a abrir sesiones de clase y monitorear a tus alumnos.</p>
+      <p class="placeholder">MVP 0: skeleton. Las funciones de sala se construyen en MVP 4.</p>
+    </section>
+  </main>
+  <script type="module" src="/dashboard.ts"></script>
+</body>
+</html>

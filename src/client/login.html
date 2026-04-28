@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador de Radar — Ingreso</title>
+  <link rel="stylesheet" href="/styles/global.css" />
+</head>
+<body class="auth-bg">
+  <main class="auth-card">
+    <h1>Simulador de Radar</h1>
+    <p class="auth-subtitle">Escuela Nacional Fluvial</p>
+    <form id="loginForm" class="auth-form" novalidate>
+      <label>
+        <span>Email</span>
+        <input type="email" name="email" autocomplete="username" required />
+      </label>
+      <label>
+        <span>Contraseña</span>
+        <input type="password" name="password" autocomplete="current-password" required />
+      </label>
+      <button type="submit">Ingresar</button>
+      <p id="loginError" class="auth-error" hidden></p>
+    </form>
+  </main>
+  <script type="module" src="/login.ts"></script>
+</body>
+</html>
