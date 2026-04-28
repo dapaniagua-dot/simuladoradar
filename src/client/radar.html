@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radar PPI — Simulador</title>
+  <link rel="stylesheet" href="/styles/global.css" />
+</head>
+<body class="radar-body">
+  <header class="topbar topbar-compact">
+    <h1>RADAR PPI <span id="ownshipBadge" class="badge">—</span></h1>
+    <div class="topbar-right">
+      <span id="connBadge" class="badge badge-preparada">conectando...</span>
+      <button id="logoutBtn" type="button">Cerrar</button>
+    </div>
+  </header>
+
+  <main class="radar-main">
+    <!-- Pantalla del PPI (lado izquierdo, ocupa la mayor parte) -->
+    <section class="radar-pantalla">
+      <div id="loadingMsg" class="placeholder radar-loading">Conectando al radar...</div>
+      <canvas id="ppiCanvas" hidden></canvas>
+    </section>
+
+    <!-- Panel de control del radar (lado derecho) -->
+    <aside class="radar-controles">
+      <section class="panel">
+        <h3 class="panel-titulo">RANGE</h3>
+        <div class="range-grid" id="rangeGrid"></div>
+      </section>
+
+      <section class="panel">
+        <h3 class="panel-titulo">MODE</h3>
+        <div class="mode-buttons">
+          <button type="button" id="modeNorth" class="btn-sm active">North Up</button>
+          <button type="button" id="modeHead" class="btn-sm">Head Up</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3 class="panel-titulo">STATUS</h3>
+        <div class="panel-row">
+          <label>Heading</label>
+          <span class="display-7seg-sm" id="hdgVal">—</span>
+        </div>
+        <div class="panel-row">
+          <label>Speed</label>
+          <span class="display-7seg-sm" id="spdVal">—</span>
+        </div>
+        <div class="panel-row">
+          <label>Position</label>
+          <span class="display-7seg-sm" id="posLatVal">—</span>
+        </div>
+        <div class="panel-row">
+          <label></label>
+          <span class="display-7seg-sm" id="posLonVal">—</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3 class="panel-titulo">PRÓXIMAS FUNCIONES</h3>
+        <p class="placeholder">EBL, VRM, ARPA y ecos del entorno se incorporan en los siguientes sub-MVPs (4.2 a 4.9).</p>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="/radar.ts"></script>
+</body>
+</html>

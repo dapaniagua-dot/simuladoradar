@@ -445,5 +445,10 @@ document.getElementById('logoutBtn')!.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   location.href = '/login.html';
 });
+document.getElementById('btnAbrirRadar')!.addEventListener('click', () => {
+  // Abrimos el PPI en otra ventana para que el alumno pueda llevarlo a otro
+  // monitor. Usa el mismo socket / sesión, conecta independiente.
+  window.open(`/radar.html?sesion=${sesionId}`, `radar-${sesionId}`, 'width=1100,height=720');
+});
 
 void init();

@@ -15,6 +15,7 @@ export default defineConfig({
         misSesiones: resolve(__dirname, 'src/client/mis-sesiones.html'),
         sesion: resolve(__dirname, 'src/client/sesion.html'),
         aula: resolve(__dirname, 'src/client/aula.html'),
+        radar: resolve(__dirname, 'src/client/radar.html'),
       },
     },
   },
