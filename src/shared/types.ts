@@ -66,6 +66,10 @@ export interface CartaCoord {
   py: number;
 }
 
+// Cada segmento contiene los dos extremos en grados decimales y también
+// las coordenadas pre-calculadas en millas náuticas relativas a la carta:
+// X = millas al este desde el NW corner, Y = millas al norte desde el SE corner.
+// (Es el formato nativo del .map; el motor del radar de Melipal opera en millas).
 export interface CartaSegmento {
   lat1: number;
   lon1: number;
@@ -73,16 +77,16 @@ export interface CartaSegmento {
   lon2: number;
   intensidad: number;
   altura: number;
-  px1: number;
-  py1: number;
-  px2: number;
-  py2: number;
+  xMillas1: number;
+  yMillas1: number;
+  xMillas2: number;
+  yMillas2: number;
 }
 
 export interface CartaParseada {
   rasterUrl: string;
-  ancho: number;
-  alto: number;
+  altoMillas: number;
+  anchoMillas: number;
   esquinaNW: CartaCoord;
   esquinaSE: CartaCoord;
   segmentos: CartaSegmento[];

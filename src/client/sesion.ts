@@ -60,7 +60,8 @@ async function init(): Promise<void> {
   imagenCache = img;
 
   cartaInfo.textContent =
-    `${carta.ancho}×${carta.alto} px · ` +
+    `${img.naturalWidth}×${img.naturalHeight} px · ` +
+    `${carta.anchoMillas.toFixed(2)}×${carta.altoMillas.toFixed(2)} millas · ` +
     `NW: ${formatCoord(carta.esquinaNW.lat, carta.esquinaNW.lon)} · ` +
     `SE: ${formatCoord(carta.esquinaSE.lat, carta.esquinaSE.lon)} · ` +
     `${carta.segmentos.length.toLocaleString('es-AR')} segmentos`;
@@ -94,12 +95,32 @@ function redraw(): void {
   ctx.drawImage(img, 0, 0);
 
   if (toggleSegmentos.checked) {
-    ctx.strokeStyle = 'rgba(255, 80, 80, 0.7)';
-    ctx.lineWidth = 1;
+    // Convertimos cada segmento de su sistema nativo (millas náuticas) a
+    // pixeles del raster usando la calibración por corners. El motor del radar
+    // de Melipal opera en millas; nosotros sólo necesitamos pintarlos arriba
+    // del PNG así que mapeamos linealmente al rectángulo de la carta.
+    const { esquinaNW, esquinaSE, anchoMillas, altoMillas } = cartaCache;
+    const anchoPix = esquinaSE.px - esquinaNW.px;
+    const altoPix = esquinaSE.py - esquinaNW.py;
+    const xMillaApix = anchoPix / anchoMillas;
+    const yMillaApix = altoPix / altoMillas;
+
+    const millasToPx = (xMill: number, yMill: number): [number, number] => {
+      // X = millas al este desde NW → crece hacia la derecha
+      // Y = millas al norte desde SE → crece hacia arriba (los pixeles crecen hacia abajo)
+      const px = esquinaNW.px + xMill * xMillaApix;
+      const py = esquinaSE.py - yMill * yMillaApix;
+      return [px, py];
+    };
+
+    ctx.strokeStyle = 'rgba(255, 80, 80, 0.75)';
+    ctx.lineWidth = 1.5 / escala;
     ctx.beginPath();
     for (const seg of cartaCache.segmentos) {
-      ctx.moveTo(seg.px1, seg.py1);
-      ctx.lineTo(seg.px2, seg.py2);
+      const [x1, y1] = millasToPx(seg.xMillas1, seg.yMillas1);
+      const [x2, y2] = millasToPx(seg.xMillas2, seg.yMillas2);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
     }
     ctx.stroke();
   }
