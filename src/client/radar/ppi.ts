@@ -10,6 +10,7 @@
 // del propio, alcance, ecos detectados) se le pasan desde fuera.
 
 import type { CartaParseada, EstadoBuqueDTO } from '../../shared/types.js';
+import { segmentoARelativo, segmentoFueraDeAlcance, latLonAMillasRel } from './coords.js';
 
 export type PPIMode = 'NORTH_UP' | 'HEAD_UP';
 
@@ -53,8 +54,8 @@ export class PPI {
   // o cada vez que llega un tick si todavía no tenemos animación.
   draw(
     ownShip: EstadoBuqueDTO | null,
-    _otherShips: EstadoBuqueDTO[],
-    _carta: CartaParseada | null,
+    otherShips: EstadoBuqueDTO[],
+    carta: CartaParseada | null,
     config: PPIConfig,
   ): void {
     const ctx = this.ctx;
@@ -66,10 +67,13 @@ export class PPI {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cssSize, cssSize);
 
-    // Centro del PPI y radio del círculo.
+    // Centro del PPI y radio del círculo en pixels.
     const cx = cssSize / 2;
     const cy = cssSize / 2;
     const radius = cssSize / 2 - 30; // margen para etiquetas
+
+    // pixelsPorMilla: cuántos pixels representa una milla náutica.
+    const pixelsPorMilla = radius / config.escalaNm;
 
     // Trasladar el origen al centro y rotar según el modo.
     ctx.save();
@@ -79,6 +83,19 @@ export class PPI {
       ctx.rotate((-ownShip.headingDeg * Math.PI) / 180);
     }
 
+    // Recortamos el dibujo de ecos al círculo del PPI.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.clip();
+    if (ownShip && carta) {
+      this.dibujarEcosCarta(ctx, ownShip, carta, config.escalaNm, pixelsPorMilla);
+    }
+    if (ownShip) {
+      this.dibujarEcosBuques(ctx, ownShip, otherShips, config.escalaNm, pixelsPorMilla);
+    }
+    ctx.restore();
+
     this.dibujarAnillos(ctx, radius, config.escalaNm);
     this.dibujarBearings(ctx, radius);
     this.dibujarHeadingLine(ctx, radius, ownShip);
@@ -86,6 +103,61 @@ export class PPI {
     ctx.restore();
 
     this.dibujarEscala(ctx, cssSize, config);
+  }
+
+  // Dibuja los ecos del entorno (segmentos de la carta proyectados sobre el PPI
+  // con coordenadas relativas al barco). Cada segmento se filtra primero por
+  // bounding box; los que pasan se dibujan como línea verde brillante.
+  private dibujarEcosCarta(
+    ctx: CanvasRenderingContext2D,
+    ownShip: EstadoBuqueDTO,
+    carta: CartaParseada,
+    alcanceNm: number,
+    pixelsPorMilla: number,
+  ): void {
+    ctx.strokeStyle = 'rgba(80, 255, 130, 0.85)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+
+    let dibujados = 0;
+    for (const seg of carta.segmentos) {
+      const rel = segmentoARelativo(seg, carta, ownShip.lat, ownShip.lon);
+      if (segmentoFueraDeAlcance(rel, alcanceNm)) continue;
+
+      // Convertir millas relativas a pixels del PPI.
+      // En el mundo: x = millas al este, y = millas al norte.
+      // En el canvas: +X derecha (norte arriba ya rotado), +Y abajo.
+      // theta=0 al norte → millas al norte (yN positivo) van a pixel.y negativo.
+      const px1 = rel.x1 * pixelsPorMilla;
+      const py1 = -rel.y1 * pixelsPorMilla;
+      const px2 = rel.x2 * pixelsPorMilla;
+      const py2 = -rel.y2 * pixelsPorMilla;
+      ctx.moveTo(px1, py1);
+      ctx.lineTo(px2, py2);
+      dibujados++;
+    }
+    ctx.stroke();
+    void dibujados; // (en el futuro se puede mostrar como métrica de carga)
+  }
+
+  private dibujarEcosBuques(
+    ctx: CanvasRenderingContext2D,
+    ownShip: EstadoBuqueDTO,
+    otherShips: EstadoBuqueDTO[],
+    alcanceNm: number,
+    pixelsPorMilla: number,
+  ): void {
+    ctx.fillStyle = 'rgba(255, 80, 80, 0.95)';
+    for (const otro of otherShips) {
+      const rel = latLonAMillasRel(otro.lat, otro.lon, ownShip.lat, ownShip.lon);
+      const dist = Math.hypot(rel.xE, rel.yN);
+      if (dist > alcanceNm) continue;
+      const px = rel.xE * pixelsPorMilla;
+      const py = -rel.yN * pixelsPorMilla;
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   private dibujarAnillos(ctx: CanvasRenderingContext2D, radius: number, escalaNm: number): void {
