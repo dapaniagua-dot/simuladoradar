@@ -23,6 +23,8 @@ const canvas = document.getElementById('cartaCanvas') as HTMLCanvasElement;
 let cartaCache: CartaParseada | null = null;
 let imagenCache: HTMLImageElement | null = null;
 
+let sesionIdActual = 0;
+
 async function init(): Promise<void> {
   const meRes = await fetch('/api/auth/me', { credentials: 'include' });
   if (!meRes.ok) {
@@ -37,13 +39,13 @@ async function init(): Promise<void> {
   userBadge.textContent = `${user.nombre} (${user.role})`;
 
   const params = new URLSearchParams(location.search);
-  const sesionId = Number(params.get('sesion'));
-  if (!Number.isFinite(sesionId) || sesionId <= 0) {
+  sesionIdActual = Number(params.get('sesion'));
+  if (!Number.isFinite(sesionIdActual) || sesionIdActual <= 0) {
     showError('Falta el ID de la sesión en la URL');
     return;
   }
 
-  const res = await fetch(`/api/aula/${sesionId}`, { credentials: 'include' });
+  const res = await fetch(`/api/aula/${sesionIdActual}`, { credentials: 'include' });
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { error?: string };
     showError(err.error ?? 'No se pudo entrar a la sesión');
@@ -73,6 +75,20 @@ async function init(): Promise<void> {
   loadingMsg.hidden = true;
   canvas.hidden = false;
   redraw();
+
+  // Polling cada 10 s: si el profesor cierra la sesión, el server devuelve 403/404
+  // y expulsamos al alumno al dashboard. En MVP 5 esto se reemplaza por un
+  // evento WebSocket 'session:closed' (push, sin polling).
+  setInterval(() => void checkSesionViva(), 10000);
+}
+
+async function checkSesionViva(): Promise<void> {
+  if (!sesionIdActual) return;
+  const res = await fetch(`/api/aula/${sesionIdActual}`, { credentials: 'include' });
+  if (res.ok) return;
+  // El profesor cerró la sesión (o nos sacó). Volvemos al dashboard con un aviso.
+  alert('El profesor cerró la sesión. Volvés al panel principal.');
+  location.href = '/dashboard.html';
 }
 
 function redraw(): void {
