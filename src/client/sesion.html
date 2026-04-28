@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador de Radar — Sesión</title>
+  <link rel="stylesheet" href="/styles/global.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="sesionTitulo">Sesión</h1>
+    <div class="topbar-right">
+      <a href="/mis-sesiones.html" class="link-button">← Volver a mis sesiones</a>
+      <span id="userBadge"></span>
+      <button id="logoutBtn" type="button">Salir</button>
+    </div>
+  </header>
+  <main class="container container-wide">
+    <section class="sesion-info">
+      <p><strong>Carta:</strong> <span id="cartaNombre">—</span></p>
+      <p><strong>Estado:</strong> <span id="estadoBadge">—</span></p>
+      <p id="descripcionEl" class="placeholder"></p>
+    </section>
+
+    <section class="carta-controls">
+      <label class="inline-checkbox">
+        <input type="checkbox" id="toggleSegmentos" checked />
+        Mostrar segmentos del radar (overlay rojo)
+      </label>
+      <span id="cartaInfo" class="placeholder"></span>
+    </section>
+
+    <section class="carta-viewport">
+      <div id="loadingMsg" class="placeholder">Cargando carta...</div>
+      <canvas id="cartaCanvas" hidden></canvas>
+    </section>
+  </main>
+  <script type="module" src="/sesion.ts"></script>
+</body>
+</html>

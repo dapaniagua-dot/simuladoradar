@@ -8,6 +8,8 @@ import connectPgSimple from 'connect-pg-simple';
 import { Server as SocketIOServer } from 'socket.io';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
+import { escenariosRouter } from './routes/escenarios.js';
+import { sesionesRouter } from './routes/sesiones.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +61,13 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/escenarios', escenariosRouter);
+app.use('/api/sesiones', sesionesRouter);
+
+// Servir /public siempre (en dev y prod): incluye los recursos estáticos de
+// cartas náuticas (PNG) que carga el visualizador.
+const publicDir = path.resolve(__dirname, '../../public');
+app.use(express.static(publicDir));
 
 if (NODE_ENV === 'production') {
   const clientDir = path.resolve(__dirname, '../client');

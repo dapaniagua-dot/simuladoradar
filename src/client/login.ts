@@ -27,6 +27,8 @@ form.addEventListener('submit', async (e) => {
     const { user } = (await res.json()) as LoginResponse;
     if (user.role === 'admin') {
       location.href = '/admin.html';
+    } else if (user.role === 'profesor') {
+      location.href = '/mis-sesiones.html';
     } else {
       location.href = '/dashboard.html';
     }

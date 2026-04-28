@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   root: 'src/client',
+  publicDir: resolve(__dirname, 'public'),
   build: {
     outDir: '../../dist/client',
     emptyOutDir: true,
@@ -11,6 +12,8 @@ export default defineConfig({
         login: resolve(__dirname, 'src/client/login.html'),
         dashboard: resolve(__dirname, 'src/client/dashboard.html'),
         admin: resolve(__dirname, 'src/client/admin.html'),
+        misSesiones: resolve(__dirname, 'src/client/mis-sesiones.html'),
+        sesion: resolve(__dirname, 'src/client/sesion.html'),
       },
     },
   },

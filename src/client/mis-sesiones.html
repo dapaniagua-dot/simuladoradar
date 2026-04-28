@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador de Radar — Mis sesiones</title>
+  <link rel="stylesheet" href="/styles/global.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Mis sesiones</h1>
+    <div class="topbar-right">
+      <span id="userBadge"></span>
+      <button id="logoutBtn" type="button">Salir</button>
+    </div>
+  </header>
+  <main class="container">
+    <section>
+      <h2>Crear nueva sesión</h2>
+      <form id="createSesionForm" class="form-grid">
+        <label>
+          <span>Nombre de la sesión</span>
+          <input type="text" name="nombre" required maxlength="255" placeholder="Ej: Maniobra de entrada al puerto - Lunes 10hs" />
+        </label>
+        <label>
+          <span>Carta náutica</span>
+          <select name="escenarioId" required>
+            <option value="">Seleccionar carta...</option>
+          </select>
+        </label>
+        <label class="full-width">
+          <span>Descripción (opcional)</span>
+          <textarea name="descripcion" rows="2" maxlength="2000" placeholder="Objetivos del ejercicio, condiciones, etc."></textarea>
+        </label>
+        <button type="submit">Crear sesión</button>
+        <p id="createError" class="auth-error" hidden></p>
+      </form>
+    </section>
+
+    <section>
+      <h2>Sesiones existentes</h2>
+      <table id="sesionesTable">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Carta</th>
+            <th>Estado</th>
+            <th>Creada</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="5" class="placeholder">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <script type="module" src="/mis-sesiones.ts"></script>
+</body>
+</html>
