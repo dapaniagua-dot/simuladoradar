@@ -94,15 +94,20 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
 
     // Eventos del cliente
     socket.on('ship:control', (payload: ShipControlPayload) => {
-      // Solo alumnos pueden mandar comandos a SU buque.
       if (ctx.role !== 'alumno' || ctx.ownshipIndex === undefined) return;
       const mundo = registry.obtener(ctx.sesionId);
       if (!mundo) return;
       if (typeof payload.telegrafo === 'string') {
         mundo.setTelegrafo(ctx.ownshipIndex, payload.telegrafo);
       }
-      if (typeof payload.rudderDeg === 'number' && Number.isFinite(payload.rudderDeg)) {
-        mundo.setRudder(ctx.ownshipIndex, payload.rudderDeg);
+      if (typeof payload.rudderCommandDeg === 'number' && Number.isFinite(payload.rudderCommandDeg)) {
+        mundo.setRudderCommand(ctx.ownshipIndex, payload.rudderCommandDeg);
+      }
+      if (typeof payload.setCourseDeg === 'number' && Number.isFinite(payload.setCourseDeg)) {
+        mundo.setSetCourse(ctx.ownshipIndex, payload.setCourseDeg);
+      }
+      if (typeof payload.autopilotOn === 'boolean') {
+        mundo.setAutopilot(ctx.ownshipIndex, payload.autopilotOn);
       }
     });
 

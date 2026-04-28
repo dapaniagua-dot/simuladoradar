@@ -105,24 +105,46 @@ export interface PosicionTelegrafo {
 export interface EstadoBuqueDTO {
   ownshipIndex: number;
   modeloSigla: string;
+  // Posición y movimiento
   lat: number;
   lon: number;
-  headingDeg: number;
-  velocidadKn: number;
+  headingDeg: number;       // rumbo actual del giroscompás (0-360)
+  velocidadKn: number;      // velocidad sobre el agua (knots)
+  turnRateDegPerMin: number;// tasa de giro instantánea (grados/minuto, signo = lado)
+  // Comandos del operador
   telegrafo: TelegrafoId;
   velObjetivoKn: number;
-  rudderDeg: number;
+  rudderCommandDeg: number; // ángulo comandado (-35..+35)
+  rudderAngleDeg: number;   // ángulo real del timón (puede ir lento al comandado)
+  // Autopiloto
+  autopilotOn: boolean;
+  setCourseDeg: number;     // rumbo objetivo del autopiloto (0-360)
+  // Métricas acumuladas
+  distanceTotalNm: number;  // millas náuticas recorridas desde el arranque
+  tripStartedAt: number;    // timestamp ms cuando arrancó la sesión
+}
+
+// Estado ambiental del mundo (compartido por todos los buques de la sesión).
+// En MVP 3.5 viene mockeado con valores fijos. En MVP futuro se conecta a un
+// modelo meteorológico que el profesor configura desde la sesión.
+export interface EstadoAmbienteDTO {
+  windSpeedKn: number;      // velocidad del viento (knots)
+  windDirectionDeg: number; // dirección DESDE donde sopla (0-360)
+  utcTimestamp: number;     // timestamp UTC del server (ms)
 }
 
 export interface TickPayload {
   t: number;
   buques: EstadoBuqueDTO[];
+  ambiente: EstadoAmbienteDTO;
 }
 
 // Comandos que el cliente envía al server por Socket.IO.
 export interface ShipControlPayload {
   telegrafo?: TelegrafoId;
-  rudderDeg?: number;
+  rudderCommandDeg?: number;
+  setCourseDeg?: number;
+  autopilotOn?: boolean;
 }
 
 // Resultado del parser de cartas (.map). Coordenadas siempre en grados decimales

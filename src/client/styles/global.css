@@ -233,12 +233,12 @@ td a:hover { text-decoration: underline; }
 .sesion-card p { margin: 4px 0; }
 
 /* ============================================================
-   Aula del alumno: layout split carta + panel de mando
+   Aula del alumno: layout split carta + consola Melipal
    ============================================================ */
 .aula-body { overflow: hidden; height: 100vh; }
 .aula-main {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 720px;
   gap: 0;
   height: calc(100vh - 56px);
 }
@@ -251,70 +251,188 @@ td a:hover { text-decoration: underline; }
   position: relative;
 }
 .aula-carta canvas { display: block; }
-.aula-mando {
+
+/* ---------- Consola de mando (estructura, sin pulir) ---------- */
+.consola-melipal {
   background: var(--bg-card);
   border-left: 1px solid var(--border);
-  padding: 16px;
+  padding: 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-.aula-mando h2 { margin: 0; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
-.aula-mando h3 { margin: 8px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
-
-.hud {
+.consola-titulo h2 { margin: 0; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.consola-fila {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  background: #0b1c2a;
-  padding: 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  gap: 12px;
 }
-.hud-cell { display: flex; flex-direction: column; }
-.hud-cell label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-.hud-cell span {
+.consola-fila-superior { grid-template-columns: 1.2fr 0.7fr 1fr; }
+.consola-fila-diales { grid-template-columns: repeat(5, 1fr); }
+.consola-fila-inferior { grid-template-columns: 1.5fr 1fr; }
+
+.panel {
+  background: #0d1c2a;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.panel-titulo {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.panel-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.panel-row label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.panel-placeholder { display: flex; flex-direction: column; justify-content: center; }
+
+/* ---------- Displays digitales ---------- */
+.display-7seg {
   font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
-  font-size: 18px;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  background: #001a14;
+  padding: 4px 10px;
+  border-radius: 3px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+.display-7seg-sm {
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 14px;
   font-weight: 600;
   color: var(--accent);
+  background: #001a14;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 1px;
 }
 
-.telegrafo-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
-.telegrafo-btn {
+/* ---------- Inputs / botones de la consola ---------- */
+.set-course, .rudder-cmd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.set-course input, .rudder-cmd input {
+  width: 70px;
+  text-align: right;
+  padding: 4px 6px;
+  font-size: 14px;
+}
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #143046;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.btn-sm:hover:not(:disabled) { background: #1a3a55; }
+.btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-toggle.active { background: var(--accent); color: #001b13; border-color: var(--accent); }
+.btn-port, .btn-stbd {
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #143046;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.btn-port:hover:not(:disabled) { background: #6a2222; }
+.btn-stbd:hover:not(:disabled) { background: #1f5a3a; }
+.btn-port:disabled, .btn-stbd:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Telégrafo vertical ---------- */
+.telegrafo-mount {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
+.telegrafo {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+.telegrafo-track {
+  position: relative;
+  height: 100%;
+  margin: 0 auto;
+  width: 100%;
+  background: linear-gradient(to bottom,
+    rgba(0, 200, 140, 0.15) 0%,
+    rgba(0, 200, 140, 0.15) 44%,
+    rgba(80, 80, 80, 0.2) 50%,
+    rgba(255, 80, 80, 0.15) 56%,
+    rgba(255, 80, 80, 0.15) 100%);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.telegrafo-marcas {
+  position: absolute;
+  top: 30px;
+  bottom: 30px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.telegrafo-marca {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  background: #0d1c2a;
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  padding: 0 8px;
   cursor: pointer;
-  font: inherit;
-  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--muted);
 }
-.telegrafo-btn:hover { background: #143046; }
-.telegrafo-btn.active { background: var(--accent); color: #001b13; border-color: var(--accent); }
-.telegrafo-btn strong { font-family: ui-monospace, monospace; font-size: 13px; min-width: 50px; }
-.telegrafo-btn span { font-size: 13px; }
-
-.rudder-slider { width: 100%; }
-.rudder-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
-.rudder-value {
+.telegrafo-marca:hover { color: var(--fg); }
+.telegrafo-marca.activa { color: var(--accent); font-weight: 600; }
+.telegrafo-tick { width: 16px; height: 1px; background: var(--muted); }
+.telegrafo-marca.activa .telegrafo-tick { background: var(--accent); height: 2px; }
+.telegrafo-handle {
+  position: absolute;
+  left: 50%;
+  width: 40px;
+  height: 24px;
+  margin-left: -20px;
+  margin-top: -12px;
+  background: var(--accent);
+  color: #001b13;
+  border: 2px solid #003322;
+  border-radius: 3px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: ui-monospace, monospace;
-  color: var(--accent);
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
+  user-select: none;
+  transition: top 0.2s ease-out;
+  z-index: 2;
 }
-.rudder-center {
-  margin-top: 8px;
-  background: #0d1c2a;
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 12px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.rudder-center:hover { background: #143046; }
+.telegrafo-handle.arrastrando { transition: none; }
+.telegrafo-handle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ---------- Diales SVG ---------- */
+.dial-host { display: flex; align-items: center; justify-content: center; min-height: 140px; }
+.dial-svg { width: 100%; max-width: 160px; height: auto; }
+.dial-bg { fill: #001a14; stroke: var(--border); stroke-width: 1; }
+.dial-tick { stroke: var(--muted); stroke-width: 1; }
+.dial-tick-label { fill: var(--muted); font-size: 9px; font-family: ui-monospace, monospace; }
+.dial-needle line { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+.dial-needle circle { fill: var(--accent); }
+.dial-label { fill: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
+.dial-value { fill: var(--accent); font-size: 14px; font-weight: 600; font-family: ui-monospace, monospace; }

@@ -18,44 +18,135 @@
   </header>
 
   <main class="aula-main">
+    <!-- Carta y barco propio (la mitad izquierda de la pantalla) -->
     <section class="aula-carta">
       <div id="loadingMsg" class="placeholder">Cargando aula...</div>
       <canvas id="cartaCanvas" hidden></canvas>
     </section>
 
-    <aside class="aula-mando">
-      <h2>Buque propio <span id="ownshipBadge" class="badge">—</span></h2>
-
-      <div class="hud">
-        <div class="hud-cell">
-          <label>Heading</label>
-          <span id="hudHeading">—</span>
-        </div>
-        <div class="hud-cell">
-          <label>Velocidad</label>
-          <span id="hudVel">—</span>
-        </div>
-        <div class="hud-cell">
-          <label>Vel. ordenada</label>
-          <span id="hudVelObj">—</span>
-        </div>
-        <div class="hud-cell">
-          <label>Posición</label>
-          <span id="hudPos">—</span>
-        </div>
+    <!-- Consola de mando (la mitad derecha, scrolleable) -->
+    <aside class="consola-melipal" data-ownship="—">
+      <div class="consola-titulo">
+        <h2>Consola de mando — <span id="ownshipBadge" class="badge">—</span></h2>
       </div>
 
-      <h3>Telégrafo</h3>
-      <div id="telegrafoBotones" class="telegrafo-grid"></div>
+      <!-- ============================================================ -->
+      <!-- Fila 1: Heading + SetCourse | Telégrafo | LOG / Cronómetro    -->
+      <!-- ============================================================ -->
+      <div class="consola-fila consola-fila-superior">
 
-      <h3>Timón <span class="rudder-value" id="rudderValor">0°</span></h3>
-      <input type="range" id="rudderSlider" min="-35" max="35" step="1" value="0" class="rudder-slider" />
-      <div class="rudder-labels">
-        <span>BABOR (-)</span>
-        <span>0°</span>
-        <span>(+) ESTRIBOR</span>
+        <!-- Panel HEADING + TURN RATE + SET COURSE + RUDDER COMMAND -->
+        <section class="panel panel-heading">
+          <h3 class="panel-titulo">HEADING</h3>
+          <div class="display-7seg" id="displayHeading">000.0</div>
+          <div class="panel-row">
+            <label>TURN RATE</label>
+            <span class="display-7seg-sm" id="displayTurnRate">0.0°/min</span>
+          </div>
+
+          <h3 class="panel-titulo">SET COURSE</h3>
+          <div class="set-course">
+            <input type="number" id="inputSetCourse" min="0" max="359" step="1" value="0" />
+            <span>°</span>
+            <button type="button" id="btnSetCourseEnter" class="btn-sm">ENTER</button>
+            <button type="button" id="btnAutopilot" class="btn-sm btn-toggle">AUTO</button>
+          </div>
+          <div class="panel-row">
+            <label>Set Course actual</label>
+            <span id="displaySetCourse">000°</span>
+          </div>
+
+          <h3 class="panel-titulo">RUDDER COMMAND</h3>
+          <div class="rudder-cmd">
+            <button type="button" id="btnRudderPort" class="btn-port">◀ PORT</button>
+            <input type="number" id="inputRudder" min="0" max="35" step="1" value="0" />
+            <span>°</span>
+            <button type="button" id="btnRudderStbd" class="btn-stbd">STBD ▶</button>
+          </div>
+          <button type="button" id="btnRudderCenter" class="btn-sm">Centrar</button>
+        </section>
+
+        <!-- Telégrafo vertical mecánico -->
+        <section class="panel panel-telegrafo-host">
+          <h3 class="panel-titulo">TELÉGRAFO</h3>
+          <div id="telegrafoMount" class="telegrafo-mount"></div>
+          <div class="panel-row">
+            <label>Vel. ordenada</label>
+            <span class="display-7seg-sm" id="displayVelObj">0.0 kn</span>
+          </div>
+          <div class="panel-row">
+            <label>Vel. real (sobre agua)</label>
+            <span class="display-7seg-sm" id="displayVelReal">0.0 kn</span>
+          </div>
+        </section>
+
+        <!-- LOG / DISTANCE / TIME -->
+        <section class="panel panel-log">
+          <h3 class="panel-titulo">LOG / DISTANCE / TIME</h3>
+          <div class="panel-row">
+            <label>DISTANCE</label>
+            <span class="display-7seg-sm" id="displayDistance">000.00 nm</span>
+          </div>
+          <div class="panel-row">
+            <label>TIME (sesión)</label>
+            <span class="display-7seg-sm" id="displayTime">00:00:00</span>
+          </div>
+          <div class="panel-row">
+            <label>UTC</label>
+            <span class="display-7seg-sm" id="displayUTC">--:--:--</span>
+          </div>
+        </section>
       </div>
-      <button type="button" id="rudderCenter" class="rudder-center">Centrar timón</button>
+
+      <!-- ============================================================ -->
+      <!-- Fila 2: cinco diales analógicos                               -->
+      <!-- ============================================================ -->
+      <div class="consola-fila consola-fila-diales">
+        <div id="dialRudderCmd" class="dial-host"></div>
+        <div id="dialRudderAngle" class="dial-host"></div>
+        <div id="dialTurnRate" class="dial-host"></div>
+        <div id="dialWindSpeed" class="dial-host"></div>
+        <div id="dialWindDirection" class="dial-host"></div>
+      </div>
+
+      <!-- ============================================================ -->
+      <!-- Fila 3: GPS PosTech                                           -->
+      <!-- ============================================================ -->
+      <div class="consola-fila consola-fila-inferior">
+        <section class="panel panel-gps">
+          <h3 class="panel-titulo">GPS PosTech NT200D</h3>
+          <div class="panel-row">
+            <label>POSITION</label>
+            <span class="display-7seg-sm" id="displayLat">—</span>
+          </div>
+          <div class="panel-row">
+            <label></label>
+            <span class="display-7seg-sm" id="displayLon">—</span>
+          </div>
+          <div class="panel-row">
+            <label>UTC</label>
+            <span class="display-7seg-sm" id="displayGpsUtc">—</span>
+          </div>
+          <div class="panel-row">
+            <label>SPEED</label>
+            <span class="display-7seg-sm" id="displayGpsSpeed">— kt</span>
+          </div>
+          <div class="panel-row">
+            <label>TRIP</label>
+            <span class="display-7seg-sm" id="displayGpsTrip">— nm</span>
+          </div>
+          <div class="panel-row">
+            <label>COURSE</label>
+            <span class="display-7seg-sm" id="displayGpsCourse">—°</span>
+          </div>
+        </section>
+
+        <!-- Placeholder MVP 6: VHF y Navtex -->
+        <section class="panel panel-placeholder">
+          <h3 class="panel-titulo">VHF / NAVTEX</h3>
+          <p class="placeholder">Comunicaciones VHF y Navtex se incorporan en MVP 6.</p>
+        </section>
+      </div>
     </aside>
   </main>
 
