@@ -4,6 +4,18 @@ Lista de mejoras agendadas que no entran en el MVP actual pero están planificad
 
 ---
 
+## ⏭️ Próxima sesión (2026-04-29)
+
+**Decisión pendiente**: cuál camino tomar para que la consola de mando se parezca al Melipal real (Diego mostró screenshot del módulo Comando original):
+
+- **Camino A** (recomendado, ~4-6 h): refacción visual rápida — telégrafo vertical mecánico con palanca, display heading 7-seg, rudder con PORT/STBD, GPS PosTech, paneles metálicos.
+- **Camino B** (~3-4 días): A + diales analógicos, autopiloto SET COURSE, LOG/cronómetro completos.
+- **Camino C**: dejar la consola actual y hacer todo el look Melipal en MVP 6 junto con VHF/Navtex.
+
+Después arrancamos **MVP 4: PPI del radar** (traducción de los `.pas` de Pascal a TypeScript).
+
+---
+
 ## 🌊 Calibración física náutica (post-MVP 5)
 
 **Estado**: agendado el 2026-04-28.
