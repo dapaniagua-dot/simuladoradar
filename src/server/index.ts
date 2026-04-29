@@ -12,6 +12,7 @@ import { escenariosRouter } from './routes/escenarios.js';
 import { sesionesRouter } from './routes/sesiones.js';
 import { aulaRouter } from './routes/aula.js';
 import { setupSockets } from './sockets/index.js';
+import { registry } from './simulacion/registry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,4 +83,10 @@ setupSockets(io, sessionMiddleware);
 
 server.listen(PORT, () => {
   console.log(`[server] escuchando en http://localhost:${PORT} (${NODE_ENV})`);
+  // Recuperar sesiones que estaban "abiertas" antes del último reinicio del
+  // server. Sin esto, cada deploy de Railway dejaría a los alumnos con un
+  // radar vacío hasta que el profesor cierre y reabra la sesión.
+  registry.restaurarSesionesAbiertas().catch((err) => {
+    console.error('[server] Error restaurando sesiones abiertas:', err);
+  });
 });

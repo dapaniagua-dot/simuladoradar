@@ -84,6 +84,22 @@ class Registry {
     }
   }
 
+  // Al arrancar el server (o reiniciarse Railway), restauramos los Mundos de
+  // todas las sesiones que están marcadas como "abierta" en la BD. Sin esto,
+  // un redeploy mata silenciosamente las sesiones en curso: la BD dice
+  // "abierta" pero no hay Mundo, así que los alumnos no reciben ticks.
+  async restaurarSesionesAbiertas(): Promise<void> {
+    const filas = await db.select({ id: sesiones.id }).from(sesiones).where(eq(sesiones.estado, 'abierta'));
+    for (const f of filas) {
+      try {
+        await this.crearYArrancar(f.id);
+        console.log(`[registry] Mundo restaurado para sesión ${f.id}`);
+      } catch (err) {
+        console.error(`[registry] Error restaurando sesión ${f.id}:`, err);
+      }
+    }
+  }
+
   // Agrega un buque al Mundo en vivo si está activo. Se usa cuando el profesor
   // asigna un alumno a una sesión que YA está abierta — sin esto, el alumno
   // nuevo no aparece hasta que el profesor cierre y reabra la sesión.

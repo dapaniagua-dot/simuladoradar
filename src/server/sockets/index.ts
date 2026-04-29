@@ -69,6 +69,12 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
         const mia = partRows.find((p) => p.alumnoId === user.id);
         if (!mia) return next(new Error('No estás asignado a esta sesión'));
         ctx.ownshipIndex = mia.ownshipIndex;
+        // Defensive: si la sesión está abierta pero el Mundo no existe (p.ej.
+        // tras un reinicio del server que falló al restaurarlo), lo creamos
+        // ahora. Esto evita que el alumno entre a un radar vacío.
+        if (!registry.obtener(sesionId)) {
+          await registry.crearYArrancar(sesionId);
+        }
       } else {
         return next(new Error('Rol desconocido'));
       }
