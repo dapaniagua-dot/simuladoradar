@@ -16,17 +16,6 @@ Después arrancamos **MVP 4: PPI del radar** (traducción de los `.pas` de Pasca
 
 ---
 
-## 📡 Persistencia del PPI relativa al barco en movimiento
-
-**Estado**: agendado el 2026-04-28.
-**Origen**: en MVP 4.3 implementé persistencia de fósforo en el PPI con un canvas offscreen. Funciona bien con el barco quieto, pero cuando el barco navega, los ecos viejos quedan fijos en pixeles del canvas, mientras los nuevos se calculan relativos a la posición actual. Resultado: los ecos persistentes parecen "moverse" respecto al barco, cuando en un radar real deberían "moverse hacia atrás" siguiendo el desplazamiento del buque.
-
-**Qué hay que hacer**: cada frame, antes de aplicar el fade, calcular el delta de posición del barco respecto al frame anterior (en lat/lon → pixels) y hacer un `drawImage` del canvas de ecos sobre sí mismo con un offset que compense el desplazamiento. Eso mantiene los ecos viejos correctamente alineados al mundo mientras el barco navega.
-
-**Workaround temporal**: cuando el alumno cambia de RANGE o MODE, el canvas de ecos se limpia (clearEchoes) para evitar artefactos visuales obvios. Pero la deriva de ecos durante el movimiento sigue siendo perceptible a velocidades altas / ranges chicos.
-
----
-
 ## 🌊 Calibración física náutica (post-MVP 5)
 
 **Estado**: agendado el 2026-04-28.
