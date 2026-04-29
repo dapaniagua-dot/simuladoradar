@@ -239,8 +239,18 @@ function conectarSocket(): void {
   });
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
-    actualizarWidgets();
-    redraw();
+    // Aislamos cualquier excepción del actualizado de widgets para que no
+    // bloquee el resto del frame ni los siguientes ticks.
+    try {
+      actualizarWidgets();
+    } catch (err) {
+      console.error('actualizarWidgets falló:', err);
+    }
+    try {
+      redraw();
+    } catch (err) {
+      console.error('redraw falló:', err);
+    }
   });
   socket.on('session:closed', () => {
     alert('El profesor cerró la sesión.');
@@ -294,26 +304,28 @@ function actualizarWidgets(): void {
   displayVelObj.textContent = `${mio.velObjetivoKn.toFixed(1)} kn`;
   displayVelReal.textContent = `${mio.velocidadKn.toFixed(1)} kn`;
 
-  // LOG / TIME
-  displayDistance.textContent = `${mio.distanceTotalNm.toFixed(2)} nm`;
-  const segundos = Math.max(0, Math.floor((Date.now() - mio.tripStartedAt) / 1000));
+  // LOG / TIME — usamos optional chaining para tolerar payloads viejos sin 'ambiente'.
+  displayDistance.textContent = `${(mio.distanceTotalNm ?? 0).toFixed(2)} nm`;
+  const tripStart = mio.tripStartedAt ?? Date.now();
+  const segundos = Math.max(0, Math.floor((Date.now() - tripStart) / 1000));
   displayTime.textContent = formatHMS(segundos);
-  displayUTC.textContent = formatUTC(ultimoTick.ambiente.utcTimestamp);
+  const utcTs = ultimoTick.ambiente?.utcTimestamp ?? Date.now();
+  displayUTC.textContent = formatUTC(utcTs);
 
   // GPS
   displayLat.textContent = formatDMS(mio.lat, true);
   displayLon.textContent = formatDMS(mio.lon, false);
-  displayGpsUtc.textContent = formatUTC(ultimoTick.ambiente.utcTimestamp);
+  displayGpsUtc.textContent = formatUTC(utcTs);
   displayGpsSpeed.textContent = `${mio.velocidadKn.toFixed(1)} kt`;
-  displayGpsTrip.textContent = `${mio.distanceTotalNm.toFixed(2)} nm`;
+  displayGpsTrip.textContent = `${(mio.distanceTotalNm ?? 0).toFixed(2)} nm`;
   displayGpsCourse.textContent = `${mio.headingDeg.toFixed(1)}°`;
 
   // Diales
-  dialRudderCmd?.setValue(mio.rudderCommandDeg);
-  dialRudderAngle?.setValue(mio.rudderAngleDeg);
-  dialTurnRate?.setValue(mio.turnRateDegPerMin);
-  dialWindSpeed?.setValue(ultimoTick.ambiente.windSpeedKn);
-  dialWindDirection?.setValue(ultimoTick.ambiente.windDirectionDeg);
+  dialRudderCmd?.setValue(mio.rudderCommandDeg ?? 0);
+  dialRudderAngle?.setValue(mio.rudderAngleDeg ?? 0);
+  dialTurnRate?.setValue(mio.turnRateDegPerMin ?? 0);
+  dialWindSpeed?.setValue(ultimoTick.ambiente?.windSpeedKn ?? 0);
+  dialWindDirection?.setValue(ultimoTick.ambiente?.windDirectionDeg ?? 0);
 }
 
 // ----- Render del barco sobre la carta ---------------------------------------

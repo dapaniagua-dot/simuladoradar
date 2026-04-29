@@ -32,9 +32,11 @@ export interface PPIConfig {
 const ANTENNA_RPM = 24;
 const ANTENNA_DEG_PER_SEC = (ANTENNA_RPM * 360) / 60; // = 144
 
-// Fade aplicado en cada frame al canvas de ecos. 0.02 = ~2% por frame a 60fps.
-// A esa tasa, un eco baja al 50% en ~35 frames (~0.6s) y al 5% en ~150 frames (~2.5s).
-const FADE_PER_FRAME = 0.02;
+// Fade aplicado en cada frame al canvas de ecos.
+// Calibrado para que un eco siga visible al ~47% después de una vuelta completa
+// de la antena (2.5s), y al ~5% recién a los 10s. Esto deja la costa siempre
+// visible entre barrido y barrido, con una persistencia tipo radar real.
+const FADE_PER_FRAME = 0.005;
 
 export class PPI {
   private mainCanvas: HTMLCanvasElement;

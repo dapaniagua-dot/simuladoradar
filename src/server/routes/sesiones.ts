@@ -287,6 +287,8 @@ sesionesRouter.post('/:id/participaciones', requireRole('profesor', 'admin'), as
       .insert(participaciones)
       .values({ sesionId: id, alumnoId: alumno.id, ownshipIndex: nextIdx })
       .returning();
+    // Si la sesión está abierta, agregamos el buque al Mundo en vivo.
+    await registry.agregarParticipanteEnVivo(id, alumno.id, created!.ownshipIndex);
     res.status(201).json({
       participacion: {
         id: created!.id,
@@ -327,9 +329,18 @@ sesionesRouter.delete(
       res.status(409).json({ error: 'No se pueden modificar alumnos de una sesión finalizada' });
       return;
     }
+    // Buscamos el ownshipIndex antes de borrar para sacar el buque del Mundo.
+    const partRows = await db
+      .select({ ownshipIndex: participaciones.ownshipIndex })
+      .from(participaciones)
+      .where(and(eq(participaciones.id, partId), eq(participaciones.sesionId, id)))
+      .limit(1);
     await db
       .delete(participaciones)
       .where(and(eq(participaciones.id, partId), eq(participaciones.sesionId, id)));
+    if (partRows[0]) {
+      registry.quitarParticipanteEnVivo(id, partRows[0].ownshipIndex);
+    }
     res.status(204).end();
   },
 );

@@ -84,6 +84,42 @@ class Registry {
     }
   }
 
+  // Agrega un buque al Mundo en vivo si está activo. Se usa cuando el profesor
+  // asigna un alumno a una sesión que YA está abierta — sin esto, el alumno
+  // nuevo no aparece hasta que el profesor cierre y reabra la sesión.
+  async agregarParticipanteEnVivo(sesionId: number, alumnoId: number, ownshipIndex: number): Promise<void> {
+    const mundo = this.mundos.get(sesionId);
+    if (!mundo) return; // sesión no abierta — el alumno se incorporará al abrirla
+    // Posición inicial: misma fórmula que al crear el Mundo.
+    const sesionRows = await db
+      .select({ escenarioSlug: escenarios.slug })
+      .from(sesiones)
+      .innerJoin(escenarios, eq(sesiones.escenarioId, escenarios.id))
+      .where(eq(sesiones.id, sesionId))
+      .limit(1);
+    const slug = sesionRows[0]?.escenarioSlug;
+    if (!slug) return;
+    const cartasDir = path.resolve(__dirname, '../../../public/cartas');
+    const mapPath = path.join(cartasDir, slug, 'carta.map');
+    const carta = await parseMapFile(mapPath, '');
+    const centroLat = (carta.esquinaNW.lat + carta.esquinaSE.lat) / 2;
+    const centroLon = (carta.esquinaNW.lon + carta.esquinaSE.lon) / 2;
+    const SEPARACION_GRADOS_LON = 0.0083;
+    const offset = (ownshipIndex - 3) * SEPARACION_GRADOS_LON;
+    mundo.agregarBuque(ownshipIndex, alumnoId, {
+      lat: centroLat,
+      lon: centroLon + offset,
+      headingDeg: 0,
+    });
+  }
+
+  // Quita un buque del Mundo si la sesión está abierta. Idempotente.
+  quitarParticipanteEnVivo(sesionId: number, ownshipIndex: number): void {
+    const mundo = this.mundos.get(sesionId);
+    if (!mundo) return;
+    mundo.quitarBuque(ownshipIndex);
+  }
+
   // Verifica si un alumno está asignado a una sesión activa. Para autorizar
   // la conexión WebSocket sin depender de la BD en cada tick.
   async puedeAlumnoEntrar(sesionId: number, alumnoId: number): Promise<boolean> {

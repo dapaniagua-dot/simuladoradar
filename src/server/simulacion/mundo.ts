@@ -67,6 +67,10 @@ export class Mundo {
     this.sesionId = sesionId;
   }
 
+  quitarBuque(ownshipIndex: number): void {
+    this.buques.delete(ownshipIndex);
+  }
+
   agregarBuque(
     ownshipIndex: number,
     alumnoId: number,
