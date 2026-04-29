@@ -16,6 +16,20 @@ Después arrancamos **MVP 4: PPI del radar** (traducción de los `.pas` de Pasca
 
 ---
 
+## 📡 Afterglow del PPI con gradiente continuo (cosmético)
+
+**Estado**: agendado el 2026-04-29.
+**Origen**: el efecto de barrido del radar usa N capas escalonadas con alphas decrecientes (1.0, 0.95, 0.88… hasta 0.55). Aunque los saltos son pequeños (≤10%), el ojo humano sigue percibiendo una "línea" sutil donde la antena dejó de iluminar.
+
+**Qué hay que hacer**: reemplazar las capas discretas por un gradiente angular continuo. Opciones:
+- Pre-renderizar una máscara con `canvas` o `OffscreenCanvas` que tenga el gradiente angular y aplicarla con `globalCompositeOperation = 'source-in'` o similar sobre los ecos en alpha 1.0.
+- Usar `CanvasRenderingContext2D.filter` con un `radial-gradient` simulado.
+- Investigar si vale usar WebGL para el PPI (resolución del problema de raíz, pero es un refactor grande).
+
+**Por qué no es ahora**: visualmente "es aceptable" según Diego. Pasa a la lista de mejoras estéticas para cuando se haga la pasada de diseño visual con Claude Design.
+
+---
+
 ## 🌊 Calibración física náutica (post-MVP 5)
 
 **Estado**: agendado el 2026-04-28.
