@@ -1,20 +1,14 @@
 // Pantalla PPI (Plan Position Indicator) del radar.
 //
-// Estructura de render con persistencia tipo CRT:
+// Render simplificado sin canvas offscreen ni persistencia:
+//   - Cada frame se redibuja todo desde cero sobre el canvas principal.
+//   - La costa se dibuja siempre, en intensidad base baja.
+//   - El sector recién barrido (detrás de la antena) se redibuja en intensidad
+//     alta sobre el mismo, simulando el highlight del barrido.
+//   - La antena gira a 24 RPM con una pequeña estela amarilla.
 //
-//   echoesCanvas (offscreen): contiene los ecos "iluminados", en coordenadas
-//     absolutas centradas en el barco (norte arriba, fijo). Cada frame se
-//     atenúa un poco (fade) y se "iluminan" los ecos del sector barrido por
-//     la antena en ese frame. Así los ecos viejos se desvanecen lentamente
-//     dando el clásico afterglow del fósforo.
-//
-//   mainCanvas (visible): se redibuja completo cada frame. Componente:
-//     - Fondo negro
-//     - echoesCanvas (rotado si es modo Head Up)
-//     - UI estática (anillos, bearings, heading line, antena, banner)
-//
-// La antena visible barre a 24 RPM (ANTENNA_RPM). La velocidad del fade
-// está calibrada para que un eco persista ~3-4 segundos.
+// Trade-off: sin persistencia tipo "fósforo CRT" auténtica, pero sin riesgo
+// de acumulación visual ni blur subpíxel cuando el barco navega.
 
 import type { CartaParseada, EstadoBuqueDTO } from '../../shared/types.js';
 import { segmentoARelativo, segmentoFueraDeAlcance, latLonAMillasRel } from './coords.js';
@@ -30,83 +24,48 @@ export interface PPIConfig {
 }
 
 const ANTENNA_RPM = 24;
-const ANTENNA_DEG_PER_SEC = (ANTENNA_RPM * 360) / 60; // = 144
+const ANTENNA_DEG_PER_SEC = (ANTENNA_RPM * 360) / 60;
 
-// Fade aplicado en cada frame al canvas de ecos.
-// Calibrado para que un eco siga visible al ~47% después de una vuelta completa
-// de la antena (2.5s), y al ~5% recién a los 10s. Esto deja la costa siempre
-// visible entre barrido y barrido, con una persistencia tipo radar real.
-const FADE_PER_FRAME = 0.005;
+// Ancho del "afterglow" detrás de la antena (en grados). Los ecos en ese
+// sector se ven más brillantes que el resto, simulando el efecto del barrido.
+const GLOW_DEG = 90;
 
 export class PPI {
-  private mainCanvas: HTMLCanvasElement;
-  private mainCtx: CanvasRenderingContext2D;
-  private echoesCanvas: HTMLCanvasElement;
-  private echoesCtx: CanvasRenderingContext2D;
-
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
   private size = 0;
   private dpr = 1;
   private antennaAngleDeg = 0;
   private lastFrameMs = 0;
 
-  // Posición del barco en el frame anterior, para calcular cuánto se desplazó
-  // y trasladar el canvas de ecos en consecuencia (así los ecos viejos
-  // "viajan hacia atrás" como en un radar real cuando el buque navega).
-  private prevLat: number | null = null;
-  private prevLon: number | null = null;
-  private prevEscalaNm: number | null = null;
-  private prevMode: PPIMode | null = null;
-
-  // Residuo de offset que no llegó a 1 píxel entero. Se acumula entre frames
-  // para que a velocidades bajas el desplazamiento se aplique cuando sea
-  // visible (sin blur subpixel por interpolación bilinear).
-  private residuoOffsetX = 0;
-  private residuoOffsetY = 0;
-
   constructor(canvas: HTMLCanvasElement) {
-    this.mainCanvas = canvas;
-    const main = canvas.getContext('2d');
-    if (!main) throw new Error('Canvas 2D no disponible');
-    this.mainCtx = main;
-
-    this.echoesCanvas = document.createElement('canvas');
-    const echoes = this.echoesCanvas.getContext('2d');
-    if (!echoes) throw new Error('Canvas offscreen no disponible');
-    this.echoesCtx = echoes;
+    this.canvas = canvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D no disponible');
+    this.ctx = ctx;
   }
 
   resize(): void {
-    const host = this.mainCanvas.parentElement;
+    const host = this.canvas.parentElement;
     if (!host) return;
     const w = host.clientWidth;
     const h = host.clientHeight;
     this.size = Math.min(w, h);
     this.dpr = window.devicePixelRatio || 1;
     const pxSize = Math.floor(this.size * this.dpr);
-
-    this.mainCanvas.style.width = `${this.size}px`;
-    this.mainCanvas.style.height = `${this.size}px`;
-    this.mainCanvas.width = pxSize;
-    this.mainCanvas.height = pxSize;
-
-    this.echoesCanvas.width = pxSize;
-    this.echoesCanvas.height = pxSize;
+    this.canvas.style.width = `${this.size}px`;
+    this.canvas.style.height = `${this.size}px`;
+    this.canvas.width = pxSize;
+    this.canvas.height = pxSize;
   }
 
-  // Borra todo el canvas de ecos persistentes. Llamar cuando cambia algo que
-  // invalida los ecos viejos: cambio de RANGE (otra escala), cambio de MODE
-  // (otra rotación), o reset manual.
+  // No-op en esta versión (no hay canvas de ecos persistente). Se mantiene
+  // la firma para que radar.ts pueda llamarla al cambiar RANGE/MODE sin
+  // que falle.
   clearEchoes(): void {
-    this.echoesCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.echoesCtx.globalCompositeOperation = 'source-over';
-    this.echoesCtx.clearRect(0, 0, this.size, this.size);
-    this.prevLat = null;
-    this.prevLon = null;
-    this.residuoOffsetX = 0;
-    this.residuoOffsetY = 0;
+    // intencionalmente vacío
   }
 
-  // Dibuja el PPI completo. Llamar a 60 fps para barrido suave.
   draw(
     ownShip: EstadoBuqueDTO | null,
     otherShips: EstadoBuqueDTO[],
@@ -121,128 +80,69 @@ export class PPI {
     const dt = dtMs / 1000;
     this.lastFrameMs = now;
 
+    const ctx = this.ctx;
     const cx = cssSize / 2;
     const cy = cssSize / 2;
     const radius = cssSize / 2 - 30;
     const pixelsPorMilla = radius / config.escalaNm;
-    const MILLAS_POR_GRADO_LAT = 60;
 
-    // Si cambió el RANGE o el MODE, los ecos viejos están en otra escala
-    // o rotación → mejor borrarlos.
-    if (
-      (this.prevEscalaNm !== null && this.prevEscalaNm !== config.escalaNm) ||
-      (this.prevMode !== null && this.prevMode !== config.mode)
-    ) {
-      this.clearEchoes();
-    }
-    this.prevEscalaNm = config.escalaNm;
-    this.prevMode = config.mode;
-
-    // Avanzar la antena
-    const prevAngle = this.antennaAngleDeg;
+    // Avanzar antena
     this.antennaAngleDeg = (this.antennaAngleDeg + ANTENNA_DEG_PER_SEC * dt) % 360;
-    const newAngle = this.antennaAngleDeg;
+    const antennaAngle = this.antennaAngleDeg;
 
-    // ---------- 1a) Compensar el desplazamiento del barco ----------
-    // Si el barco se mueve, los ecos viejos en el canvas deben "viajar hacia
-    // atrás" relativo al barco para mantenerse anclados a su posición geográfica.
-    //
-    // Cuidado: a velocidades bajas el delta por frame es subpíxel (~0.002 px
-    // a 18 kn / range 12 NM / 60 fps). Si llamamos drawImage con un offset
-    // fraccionario, el browser interpola bilinear → cada frame agrega un
-    // blur ínfimo, que ACUMULADO sobre cientos de frames vuelve los ecos
-    // gruesos y borrosos. Lo evitamos:
-    //   1) imageSmoothingEnabled=false → nearest-neighbor.
-    //   2) Acumulamos un residuo entre frames y solo aplicamos drawImage
-    //      cuando el offset entero sea >= 1 px en alguna dirección.
-    if (ownShip && this.prevLat !== null && this.prevLon !== null) {
-      const dN_millas = (ownShip.lat - this.prevLat) * MILLAS_POR_GRADO_LAT;
-      const cosLat = Math.cos((ownShip.lat * Math.PI) / 180);
-      const dE_millas = (ownShip.lon - this.prevLon) * cosLat * MILLAS_POR_GRADO_LAT;
-      this.residuoOffsetX += -dE_millas * pixelsPorMilla;
-      this.residuoOffsetY += dN_millas * pixelsPorMilla;
-      const offsetIntX = this.residuoOffsetX >= 0 ? Math.floor(this.residuoOffsetX) : Math.ceil(this.residuoOffsetX);
-      const offsetIntY = this.residuoOffsetY >= 0 ? Math.floor(this.residuoOffsetY) : Math.ceil(this.residuoOffsetY);
-      if (offsetIntX !== 0 || offsetIntY !== 0) {
-        const ctx = this.echoesCtx;
-        ctx.save();
-        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-        ctx.imageSmoothingEnabled = false;
-        ctx.globalCompositeOperation = 'copy';
-        ctx.drawImage(this.echoesCanvas, offsetIntX, offsetIntY, cssSize, cssSize);
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.restore();
-        this.residuoOffsetX -= offsetIntX;
-        this.residuoOffsetY -= offsetIntY;
-      }
-    }
-    if (ownShip) {
-      this.prevLat = ownShip.lat;
-      this.prevLon = ownShip.lon;
-    }
-
-    // ---------- 1b) Fade del canvas de ecos ----------
-    this.echoesCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.echoesCtx.globalCompositeOperation = 'destination-out';
-    this.echoesCtx.fillStyle = `rgba(0, 0, 0, ${FADE_PER_FRAME})`;
-    this.echoesCtx.fillRect(0, 0, cssSize, cssSize);
-    this.echoesCtx.globalCompositeOperation = 'source-over';
-
-    // ---------- 2) Iluminar ecos del sector barrido ----------
-    if (ownShip) {
-      this.echoesCtx.save();
-      this.echoesCtx.translate(cx, cy);
-
-      // Recortar a un sector entre prevAngle y newAngle. El bearing 0 está al
-      // norte (-90° del eje x del canvas que apunta a la derecha).
-      this.echoesCtx.beginPath();
-      this.echoesCtx.moveTo(0, 0);
-      const a1 = ((prevAngle - 90) * Math.PI) / 180;
-      const a2 = ((newAngle - 90) * Math.PI) / 180;
-      // Si cruzamos el 0/360 (newAngle < prevAngle), dibujamos el wrap en dos pasos.
-      if (newAngle >= prevAngle) {
-        this.echoesCtx.arc(0, 0, radius + 20, a1, a2);
-      } else {
-        this.echoesCtx.arc(0, 0, radius + 20, a1, ((360 - 90) * Math.PI) / 180);
-        this.echoesCtx.lineTo(0, 0);
-        this.echoesCtx.moveTo(0, 0);
-        this.echoesCtx.arc(0, 0, radius + 20, ((-90) * Math.PI) / 180, a2);
-      }
-      this.echoesCtx.lineTo(0, 0);
-      this.echoesCtx.closePath();
-      this.echoesCtx.clip();
-
-      if (carta) {
-        this.dibujarEcosCarta(this.echoesCtx, ownShip, carta, config.escalaNm, pixelsPorMilla);
-      }
-      this.dibujarEcosBuques(this.echoesCtx, ownShip, otherShips, config.escalaNm, pixelsPorMilla);
-
-      this.echoesCtx.restore();
-    }
-
-    // ---------- 3) Render del canvas principal ----------
-    const ctx = this.mainCtx;
+    // Fondo negro
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cssSize, cssSize);
 
-    // Componer la capa de ecos. En Head Up, rotamos según el heading actual.
-    ctx.save();
-    if (config.mode === 'HEAD_UP' && ownShip) {
-      ctx.translate(cx, cy);
-      ctx.rotate((-ownShip.headingDeg * Math.PI) / 180);
-      ctx.translate(-cx, -cy);
-    }
-    ctx.drawImage(this.echoesCanvas, 0, 0, cssSize, cssSize);
-    ctx.restore();
-
-    // UI estática (no se desvanece).
+    // Trasladar al centro y aplicar rotación de Head Up sobre el contenido
     ctx.save();
     ctx.translate(cx, cy);
+    if (config.mode === 'HEAD_UP' && ownShip) {
+      ctx.rotate((-ownShip.headingDeg * Math.PI) / 180);
+    }
+
+    // Capa 1: ecos en intensidad baja (siempre visibles, recortado al círculo)
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.clip();
+    if (ownShip && carta) {
+      this.dibujarEcosCarta(ctx, ownShip, carta, config.escalaNm, pixelsPorMilla, 0.35);
+    }
+    if (ownShip) {
+      this.dibujarEcosBuques(ctx, ownShip, otherShips, config.escalaNm, pixelsPorMilla, 0.55);
+    }
+    ctx.restore();
+
+    // Capa 2: highlight del sector recién barrido (los últimos GLOW_DEG grados
+    // detrás de la antena, en intensidad alta) recortado al círculo
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    const aNew = ((antennaAngle - 90) * Math.PI) / 180;
+    const aOld = ((antennaAngle - GLOW_DEG - 90) * Math.PI) / 180;
+    ctx.arc(0, 0, radius, aOld, aNew);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.clip();
+    if (ownShip && carta) {
+      this.dibujarEcosCarta(ctx, ownShip, carta, config.escalaNm, pixelsPorMilla, 1);
+    }
+    if (ownShip) {
+      this.dibujarEcosBuques(ctx, ownShip, otherShips, config.escalaNm, pixelsPorMilla, 1);
+    }
+    ctx.restore();
+
+    // Anillos / bearings / heading line / antena
     this.dibujarAnillos(ctx, radius, config.escalaNm);
     this.dibujarBearings(ctx, radius);
     this.dibujarHeadingLine(ctx, radius, ownShip, config.mode);
-    this.dibujarAntena(ctx, radius, newAngle);
+    this.dibujarAntena(ctx, radius, antennaAngle);
+
     ctx.restore();
 
     this.dibujarEscala(ctx, cssSize, config);
@@ -254,20 +154,17 @@ export class PPI {
     carta: CartaParseada,
     alcanceNm: number,
     pixelsPorMilla: number,
+    alpha: number,
   ): void {
-    ctx.strokeStyle = 'rgba(120, 255, 150, 1)';
-    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = `rgba(120, 255, 150, ${alpha})`;
+    ctx.lineWidth = 1.2;
     ctx.lineCap = 'round';
     ctx.beginPath();
     for (const seg of carta.segmentos) {
       const rel = segmentoARelativo(seg, carta, ownShip.lat, ownShip.lon);
       if (segmentoFueraDeAlcance(rel, alcanceNm)) continue;
-      const px1 = rel.x1 * pixelsPorMilla;
-      const py1 = -rel.y1 * pixelsPorMilla;
-      const px2 = rel.x2 * pixelsPorMilla;
-      const py2 = -rel.y2 * pixelsPorMilla;
-      ctx.moveTo(px1, py1);
-      ctx.lineTo(px2, py2);
+      ctx.moveTo(rel.x1 * pixelsPorMilla, -rel.y1 * pixelsPorMilla);
+      ctx.lineTo(rel.x2 * pixelsPorMilla, -rel.y2 * pixelsPorMilla);
     }
     ctx.stroke();
   }
@@ -278,16 +175,15 @@ export class PPI {
     otherShips: EstadoBuqueDTO[],
     alcanceNm: number,
     pixelsPorMilla: number,
+    alpha: number,
   ): void {
-    ctx.fillStyle = 'rgba(255, 120, 120, 1)';
+    ctx.fillStyle = `rgba(255, 120, 120, ${alpha})`;
     for (const otro of otherShips) {
       const rel = latLonAMillasRel(otro.lat, otro.lon, ownShip.lat, ownShip.lon);
       const dist = Math.hypot(rel.xE, rel.yN);
       if (dist > alcanceNm) continue;
-      const px = rel.xE * pixelsPorMilla;
-      const py = -rel.yN * pixelsPorMilla;
       ctx.beginPath();
-      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.arc(rel.xE * pixelsPorMilla, -rel.yN * pixelsPorMilla, 4, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -302,7 +198,6 @@ export class PPI {
       ctx.arc(0, 0, r, 0, Math.PI * 2);
     }
     ctx.stroke();
-
     ctx.fillStyle = 'rgba(0, 220, 100, 0.7)';
     ctx.font = '10px ui-monospace, monospace';
     ctx.textAlign = 'left';
@@ -322,7 +217,6 @@ export class PPI {
     ctx.font = 'bold 11px ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-
     for (let bearing = 0; bearing < 360; bearing += 10) {
       const major = bearing % 30 === 0;
       const angle = ((bearing - 90) * Math.PI) / 180;
@@ -351,8 +245,6 @@ export class PPI {
     ctx.arc(0, 0, 3, 0, Math.PI * 2);
     ctx.fill();
     if (!ownShip) return;
-    // En Head Up la heading line siempre apunta arriba (la pantalla rota con el barco).
-    // En North Up apunta al heading absoluto.
     const angleDeg = mode === 'HEAD_UP' ? 0 : ownShip.headingDeg;
     ctx.save();
     ctx.rotate((angleDeg * Math.PI) / 180);
@@ -365,22 +257,15 @@ export class PPI {
     ctx.restore();
   }
 
-  // Línea más brillante que representa la antena del radar barriendo.
-  // Arrastra un breve "estela" que ayuda a percibir el sentido del barrido.
   private dibujarAntena(ctx: CanvasRenderingContext2D, radius: number, angleDeg: number): void {
+    // Línea principal de la antena en el ángulo actual.
     const angle = ((angleDeg - 90) * Math.PI) / 180;
-    // Estela: 5 líneas con opacidad decreciente, simulando movimiento.
-    for (let i = 0; i < 5; i++) {
-      const trailDeg = angleDeg - i * 4;
-      const a = ((trailDeg - 90) * Math.PI) / 180;
-      ctx.strokeStyle = `rgba(120, 255, 150, ${0.5 - i * 0.1})`;
-      ctx.lineWidth = i === 0 ? 2 : 1;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(Math.cos(a) * radius, Math.sin(a) * radius);
-      ctx.stroke();
-    }
-    void angle;
+    ctx.strokeStyle = 'rgba(180, 255, 200, 0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    ctx.stroke();
   }
 
   private dibujarEscala(ctx: CanvasRenderingContext2D, size: number, config: PPIConfig): void {
