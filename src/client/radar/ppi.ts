@@ -23,12 +23,23 @@ export interface PPIConfig {
   mode: PPIMode;
 }
 
-const ANTENNA_RPM = 24;
+// Velocidad de barrido. Un radar náutico real gira a 24 RPM (1 vuelta cada
+// 2.5 s); para uso pedagógico en pantalla chica conviene un ritmo más
+// pausado (12 RPM = 1 vuelta cada 5 s).
+const ANTENNA_RPM = 12;
 const ANTENNA_DEG_PER_SEC = (ANTENNA_RPM * 360) / 60;
 
-// Ancho del "afterglow" detrás de la antena (en grados). Los ecos en ese
-// sector se ven más brillantes que el resto, simulando el efecto del barrido.
-const GLOW_DEG = 90;
+// Pasos del afterglow simulado: cada entrada define un sector detrás de la
+// antena (en grados, acumulado) y la opacidad relativa de los ecos en ese
+// sector. La antena va dejando una "estela" cada vez más tenue hasta llegar
+// al fondo (BASE_ALPHA), simulando la persistencia de un fósforo CRT.
+const BASE_ALPHA = 0.45;
+const GLOW_STEPS: { degHasta: number; alpha: number }[] = [
+  { degHasta: 30, alpha: 1.0 },
+  { degHasta: 90, alpha: 0.85 },
+  { degHasta: 180, alpha: 0.7 },
+  { degHasta: 270, alpha: 0.55 },
+];
 
 export class PPI {
   private canvas: HTMLCanvasElement;
@@ -102,40 +113,47 @@ export class PPI {
       ctx.rotate((-ownShip.headingDeg * Math.PI) / 180);
     }
 
-    // Capa 1: ecos en intensidad baja (siempre visibles, recortado al círculo)
+    // Capa base: TODOS los ecos en intensidad baja (siempre visibles).
     ctx.save();
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
     ctx.clip();
     if (ownShip && carta) {
-      this.dibujarEcosCarta(ctx, ownShip, carta, config.escalaNm, pixelsPorMilla, 0.35);
+      this.dibujarEcosCarta(ctx, ownShip, carta, config.escalaNm, pixelsPorMilla, BASE_ALPHA);
     }
     if (ownShip) {
-      this.dibujarEcosBuques(ctx, ownShip, otherShips, config.escalaNm, pixelsPorMilla, 0.55);
+      this.dibujarEcosBuques(ctx, ownShip, otherShips, config.escalaNm, pixelsPorMilla, BASE_ALPHA + 0.2);
     }
     ctx.restore();
 
-    // Capa 2: highlight del sector recién barrido (los últimos GLOW_DEG grados
-    // detrás de la antena, en intensidad alta) recortado al círculo
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    const aNew = ((antennaAngle - 90) * Math.PI) / 180;
-    const aOld = ((antennaAngle - GLOW_DEG - 90) * Math.PI) / 180;
-    ctx.arc(0, 0, radius, aOld, aNew);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.clip();
-    if (ownShip && carta) {
-      this.dibujarEcosCarta(ctx, ownShip, carta, config.escalaNm, pixelsPorMilla, 1);
-    }
+    // Afterglow escalonado: cada paso pinta los ecos del sector "detrás de la
+    // antena" (entre 0° y degHasta) con la opacidad correspondiente. Vamos
+    // desde el más lejano al más cercano para que las capas brillantes queden
+    // arriba.
     if (ownShip) {
-      this.dibujarEcosBuques(ctx, ownShip, otherShips, config.escalaNm, pixelsPorMilla, 1);
+      for (let i = GLOW_STEPS.length - 1; i >= 0; i--) {
+        const step = GLOW_STEPS[i]!;
+        ctx.save();
+        // Clip al círculo
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.clip();
+        // Clip al sector [antena - degHasta, antena]
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        const aNew = ((antennaAngle - 90) * Math.PI) / 180;
+        const aOld = ((antennaAngle - step.degHasta - 90) * Math.PI) / 180;
+        ctx.arc(0, 0, radius, aOld, aNew);
+        ctx.lineTo(0, 0);
+        ctx.closePath();
+        ctx.clip();
+        if (carta) {
+          this.dibujarEcosCarta(ctx, ownShip, carta, config.escalaNm, pixelsPorMilla, step.alpha);
+        }
+        this.dibujarEcosBuques(ctx, ownShip, otherShips, config.escalaNm, pixelsPorMilla, step.alpha);
+        ctx.restore();
+      }
     }
-    ctx.restore();
 
     // Anillos / bearings / heading line / antena
     this.dibujarAnillos(ctx, radius, config.escalaNm);
