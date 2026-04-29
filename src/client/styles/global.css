@@ -567,3 +567,59 @@ td a:hover { text-decoration: underline; }
 }
 .comm-grid > div { display: flex; flex-direction: column; gap: 4px; }
 .comm-grid .comm-list { height: 150px; }
+
+/* ============================================================
+   Posicionamiento de OwnShips (sesión preparada — modo Melipal)
+   ============================================================ */
+.alumno-row {
+  /* sobreescribimos la grilla original para acomodar lat/lon/heading + acciones */
+  grid-template-columns: 60px 1fr auto;
+}
+.alumno-row-extra {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.alumno-row-extra label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 10px;
+}
+.alumno-row-extra input[type="number"] {
+  width: 90px;
+  padding: 3px 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.alumno-row-extra .pos-actions { margin-left: auto; display: flex; gap: 6px; }
+.alumno-row-extra .pos-status {
+  font-style: italic;
+  font-size: 11px;
+}
+.alumno-row-extra .pos-status.pos-fija { color: var(--accent); font-style: normal; }
+
+.modo-banner {
+  background: #1a3a55;
+  border: 1px solid var(--accent);
+  color: var(--fg);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.modo-banner span { flex: 1; font-size: 13px; }
+
+.carta-viewport.modo-ubicar canvas {
+  cursor: crosshair;
+}

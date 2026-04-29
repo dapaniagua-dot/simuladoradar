@@ -266,6 +266,9 @@ sesionesRouter.get('/:id/participaciones', requireRole('profesor', 'admin'), asy
       alumnoEmail: users.email,
       alumnoNombre: users.nombre,
       ownshipIndex: participaciones.ownshipIndex,
+      latInicial: participaciones.latInicial,
+      lonInicial: participaciones.lonInicial,
+      headingInicial: participaciones.headingInicial,
       createdAt: participaciones.createdAt,
     })
     .from(participaciones)
@@ -279,10 +282,94 @@ sesionesRouter.get('/:id/participaciones', requireRole('profesor', 'admin'), asy
     alumnoEmail: r.alumnoEmail,
     alumnoNombre: r.alumnoNombre,
     ownshipIndex: r.ownshipIndex,
+    latInicial: r.latInicial,
+    lonInicial: r.lonInicial,
+    headingInicial: r.headingInicial,
     createdAt: r.createdAt.toISOString(),
   }));
   res.json({ participaciones: dto });
 });
+
+// PATCH /api/sesiones/:id/participaciones/:partId/posicion
+// Guarda la posición y heading iniciales de un buque. Sólo permitido cuando
+// la sesión está 'preparada' — una vez abierta, los buques ya están
+// corriendo y no tiene sentido editar la posición de salida.
+const setPosicionSchema = z.object({
+  lat: z.number().finite(),
+  lon: z.number().finite(),
+  headingDeg: z.number().finite(),
+});
+
+sesionesRouter.patch(
+  '/:id/participaciones/:partId/posicion',
+  requireRole('profesor', 'admin'),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    const partId = Number(req.params.partId);
+    if (!Number.isFinite(id) || !Number.isFinite(partId)) {
+      res.status(400).json({ error: 'ID inválido' });
+      return;
+    }
+    const parsed = setPosicionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'lat/lon/headingDeg inválidos' });
+      return;
+    }
+    const ses = await loadSesionDelDueno(req, id);
+    if (!ses) {
+      res.status(404).json({ error: 'Sesión no encontrada' });
+      return;
+    }
+    if (ses.estado !== 'preparada') {
+      res.status(409).json({ error: 'Solo se puede ubicar el barco antes de abrir la sesión' });
+      return;
+    }
+    const heading = ((parsed.data.headingDeg % 360) + 360) % 360;
+    const updated = await db
+      .update(participaciones)
+      .set({
+        latInicial: parsed.data.lat,
+        lonInicial: parsed.data.lon,
+        headingInicial: heading,
+      })
+      .where(and(eq(participaciones.id, partId), eq(participaciones.sesionId, id)))
+      .returning();
+    if (updated.length === 0) {
+      res.status(404).json({ error: 'Participación no encontrada' });
+      return;
+    }
+    res.json({ ok: true });
+  },
+);
+
+// DELETE /api/sesiones/:id/participaciones/:partId/posicion
+// Limpia la posición inicial — el buque vuelve al reparto automático.
+sesionesRouter.delete(
+  '/:id/participaciones/:partId/posicion',
+  requireRole('profesor', 'admin'),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    const partId = Number(req.params.partId);
+    if (!Number.isFinite(id) || !Number.isFinite(partId)) {
+      res.status(400).json({ error: 'ID inválido' });
+      return;
+    }
+    const ses = await loadSesionDelDueno(req, id);
+    if (!ses) {
+      res.status(404).json({ error: 'Sesión no encontrada' });
+      return;
+    }
+    if (ses.estado !== 'preparada') {
+      res.status(409).json({ error: 'Solo se puede limpiar la posición antes de abrir la sesión' });
+      return;
+    }
+    await db
+      .update(participaciones)
+      .set({ latInicial: null, lonInicial: null, headingInicial: null })
+      .where(and(eq(participaciones.id, partId), eq(participaciones.sesionId, id)));
+    res.status(204).end();
+  },
+);
 
 const addParticipacionSchema = z.object({ alumnoId: z.number().int().positive() });
 
@@ -343,6 +430,9 @@ sesionesRouter.post('/:id/participaciones', requireRole('profesor', 'admin'), as
         alumnoEmail: alumno.email,
         alumnoNombre: alumno.nombre,
         ownshipIndex: created!.ownshipIndex,
+        latInicial: created!.latInicial,
+        lonInicial: created!.lonInicial,
+        headingInicial: created!.headingInicial,
         createdAt: created!.createdAt.toISOString(),
       } satisfies Participacion,
     });

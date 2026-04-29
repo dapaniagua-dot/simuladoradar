@@ -65,7 +65,7 @@ class Registry {
     });
 
     for (const p of parts) {
-      const pos = posicionInicial(centroLat, centroLon, p.ownshipIndex);
+      const pos = resolverPosicion(p, centroLat, centroLon);
       mundo.agregarBuque(p.ownshipIndex, p.alumnoId, pos, MODELO_DEFAULT);
     }
     mundo.iniciar();
@@ -106,7 +106,6 @@ class Registry {
   async agregarParticipanteEnVivo(sesionId: number, alumnoId: number, ownshipIndex: number): Promise<void> {
     const mundo = this.mundos.get(sesionId);
     if (!mundo) return; // sesión no abierta — el alumno se incorporará al abrirla
-    // Posición inicial: misma fórmula que al crear el Mundo.
     const sesionRows = await db
       .select({ escenarioSlug: escenarios.slug })
       .from(sesiones)
@@ -120,13 +119,17 @@ class Registry {
     const carta = await parseMapFile(mapPath, '');
     const centroLat = (carta.esquinaNW.lat + carta.esquinaSE.lat) / 2;
     const centroLon = (carta.esquinaNW.lon + carta.esquinaSE.lon) / 2;
-    const SEPARACION_GRADOS_LON = 0.0083;
-    const offset = (ownshipIndex - 3) * SEPARACION_GRADOS_LON;
-    mundo.agregarBuque(ownshipIndex, alumnoId, {
-      lat: centroLat,
-      lon: centroLon + offset,
-      headingDeg: 0,
-    });
+    // Releer la participación para tomar la posición inicial guardada (si la hay).
+    const partRows = await db
+      .select()
+      .from(participaciones)
+      .where(and(eq(participaciones.sesionId, sesionId), eq(participaciones.ownshipIndex, ownshipIndex)))
+      .limit(1);
+    const part = partRows[0];
+    const pos = part
+      ? resolverPosicion(part, centroLat, centroLon)
+      : posicionInicial(centroLat, centroLon, ownshipIndex);
+    mundo.agregarBuque(ownshipIndex, alumnoId, pos);
   }
 
   // Quita un buque del Mundo si la sesión está abierta. Idempotente.
@@ -165,4 +168,28 @@ function posicionInicial(centroLat: number, centroLon: number, ownshipIndex: num
     lon: centroLon + offset,
     headingDeg: 0,
   };
+}
+
+// Si el profesor ubicó el barco antes de abrir la sesión usa esa posición;
+// si no, cae al reparto automático.
+type ParticipacionRow = {
+  ownshipIndex: number;
+  latInicial: number | null;
+  lonInicial: number | null;
+  headingInicial: number | null;
+};
+
+function resolverPosicion(
+  p: ParticipacionRow,
+  centroLat: number,
+  centroLon: number,
+): PosicionInicial {
+  if (p.latInicial !== null && p.lonInicial !== null) {
+    return {
+      lat: p.latInicial,
+      lon: p.lonInicial,
+      headingDeg: p.headingInicial ?? 0,
+    };
+  }
+  return posicionInicial(centroLat, centroLon, p.ownshipIndex);
 }

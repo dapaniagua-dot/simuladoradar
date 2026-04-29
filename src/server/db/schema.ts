@@ -3,6 +3,7 @@ import {
   serial,
   varchar,
   integer,
+  doublePrecision,
   text,
   timestamp,
   index,
@@ -99,6 +100,12 @@ export const participaciones = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     ownshipIndex: integer('ownship_index').notNull(),
+    // Posición inicial elegida por el profesor antes de abrir la sesión.
+    // Si están en null, el registry distribuye los buques alrededor del centro
+    // de la carta (comportamiento por defecto).
+    latInicial: doublePrecision('lat_inicial'),
+    lonInicial: doublePrecision('lon_inicial'),
+    headingInicial: doublePrecision('heading_inicial'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

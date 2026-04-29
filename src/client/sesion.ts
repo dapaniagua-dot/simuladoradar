@@ -31,6 +31,10 @@ const alumnosLista = document.getElementById('alumnosLista') as HTMLDivElement;
 const addAlumnoForm = document.getElementById('addAlumnoForm') as HTMLFormElement;
 const addAlumnoSelect = addAlumnoForm.elements.namedItem('alumnoId') as HTMLSelectElement;
 const addAlumnoError = document.getElementById('addAlumnoError') as HTMLParagraphElement;
+const cartaViewport = document.querySelector('.carta-viewport') as HTMLElement;
+const modoBanner = document.getElementById('modoUbicarBanner') as HTMLDivElement;
+const modoTexto = document.getElementById('modoUbicarTexto') as HTMLSpanElement;
+const modoCancelar = document.getElementById('modoUbicarCancelar') as HTMLButtonElement;
 
 let sesionId = 0;
 let sesionEstado: Sesion['estado'] = 'preparada';
@@ -44,6 +48,23 @@ const mensajesVHF: MensajeVHF[] = [];
 const mensajesNavtex: MensajeNavtex[] = [];
 const mensajesPrivados: MensajePrivado[] = [];
 let participacionesActuales: Participacion[] = [];
+
+// ===== Modo "ubicar barco" (estilo Melipal) =====
+// Cuando el profesor toca "Ubicar OS-N" entramos en este modo: el primer click
+// en la carta fija lat/lon, y mientras se mantiene apretado el botón, el drag
+// define el heading. Al soltar se guarda en BD.
+type ModoUbicar = {
+  partId: number;
+  ownshipIndex: number;
+  alumnoNombre: string;
+  // Punto fijado (en lat/lon) — null hasta el primer click
+  lat: number | null;
+  lon: number | null;
+  // heading actual mientras se arrastra
+  headingDeg: number;
+  arrastrando: boolean;
+};
+let modoUbicar: ModoUbicar | null = null;
 
 async function init(): Promise<void> {
   const me = await fetch('/api/auth/me', { credentials: 'include' });
@@ -305,13 +326,19 @@ async function loadParticipaciones(): Promise<void> {
   refrescarDmDestinos();
   if (participaciones.length === 0) {
     alumnosLista.innerHTML = `<p class="placeholder">Todavía no hay alumnos asignados a esta sesión.</p>`;
+    redraw();
     return;
   }
   alumnosLista.innerHTML = '';
+  const editable = sesionEstado === 'preparada';
   for (const p of participaciones) {
     const row = document.createElement('div');
     row.className = 'alumno-row';
     const puedeQuitar = sesionEstado !== 'finalizada';
+    const tienePos = p.latInicial !== null && p.lonInicial !== null;
+    const lat = p.latInicial ?? '';
+    const lon = p.lonInicial ?? '';
+    const hdg = p.headingInicial ?? 0;
     row.innerHTML = `
       <span class="ownship-tag">OS-${p.ownshipIndex}</span>
       <span class="alumno-info">
@@ -319,6 +346,17 @@ async function loadParticipaciones(): Promise<void> {
         <small>${escape(p.alumnoEmail)}</small>
       </span>
       ${puedeQuitar ? `<button type="button" class="btn-quitar" data-id="${p.id}">Quitar</button>` : ''}
+      <div class="alumno-row-extra">
+        <label>LAT <input type="number" step="0.0001" data-pos-lat="${p.id}" value="${lat}" ${editable ? '' : 'disabled'} /></label>
+        <label>LON <input type="number" step="0.0001" data-pos-lon="${p.id}" value="${lon}" ${editable ? '' : 'disabled'} /></label>
+        <label>HDG <input type="number" min="0" max="359" step="1" data-pos-hdg="${p.id}" value="${hdg}" ${editable ? '' : 'disabled'} /></label>
+        <span class="pos-status ${tienePos ? 'pos-fija' : ''}">${tienePos ? 'Posición fijada' : 'Posición auto (default)'}</span>
+        <span class="pos-actions">
+          ${editable ? `<button type="button" class="btn-sm" data-ubicar="${p.id}" data-os="${p.ownshipIndex}" data-nombre="${escape(p.alumnoNombre)}">Ubicar en carta</button>` : ''}
+          ${editable ? `<button type="button" class="btn-sm" data-pos-guardar="${p.id}">Guardar</button>` : ''}
+          ${editable && tienePos ? `<button type="button" class="btn-sm" data-pos-limpiar="${p.id}">Limpiar</button>` : ''}
+        </span>
+      </div>
     `;
     alumnosLista.appendChild(row);
   }
@@ -333,6 +371,59 @@ async function loadParticipaciones(): Promise<void> {
       await Promise.all([loadParticipaciones(), loadAlumnosDisponibles()]);
     });
   });
+  alumnosLista.querySelectorAll('[data-ubicar]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const el = e.currentTarget as HTMLButtonElement;
+      const partId = Number(el.dataset.ubicar);
+      const ownshipIndex = Number(el.dataset.os);
+      const alumnoNombre = el.dataset.nombre ?? '';
+      iniciarModoUbicar(partId, ownshipIndex, alumnoNombre);
+    });
+  });
+  alumnosLista.querySelectorAll('[data-pos-guardar]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = Number((e.currentTarget as HTMLButtonElement).dataset.posGuardar);
+      const latIn = alumnosLista.querySelector(`[data-pos-lat="${id}"]`) as HTMLInputElement | null;
+      const lonIn = alumnosLista.querySelector(`[data-pos-lon="${id}"]`) as HTMLInputElement | null;
+      const hdgIn = alumnosLista.querySelector(`[data-pos-hdg="${id}"]`) as HTMLInputElement | null;
+      const lat = Number(latIn?.value);
+      const lon = Number(lonIn?.value);
+      const hdg = Number(hdgIn?.value);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(hdg)) {
+        alert('Lat / Lon / Heading inválidos');
+        return;
+      }
+      await guardarPosicion(id, lat, lon, hdg);
+    });
+  });
+  alumnosLista.querySelectorAll('[data-pos-limpiar]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = Number((e.currentTarget as HTMLButtonElement).dataset.posLimpiar);
+      if (!confirm('¿Volver al reparto automático para este buque?')) return;
+      await fetch(`/api/sesiones/${sesionId}/participaciones/${id}/posicion`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      await loadParticipaciones();
+      redraw();
+    });
+  });
+  redraw();
+}
+
+async function guardarPosicion(partId: number, lat: number, lon: number, hdg: number): Promise<void> {
+  const res = await fetch(`/api/sesiones/${sesionId}/participaciones/${partId}/posicion`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ lat, lon, headingDeg: hdg }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: string };
+    alert(err.error ?? 'No se pudo guardar la posición');
+    return;
+  }
+  await loadParticipaciones();
 }
 
 async function loadAlumnosDisponibles(): Promise<void> {
@@ -469,12 +560,95 @@ function redraw(): void {
     ctx.stroke();
   }
 
-  // Render en vivo de los buques de la sesión (si hay tick reciente).
   if (ultimoTick) {
+    // Sesión en curso — renderizamos los buques que reporta el server.
     for (const b of ultimoTick.buques) {
       dibujarBuque(ctx, escala, b);
     }
+  } else if (sesionEstado === 'preparada') {
+    // Antes de abrir, mostramos las posiciones iniciales que el profesor ya fijó
+    // (con un estilo distinto: anillo punteado para indicar que todavía no
+    // están "vivos").
+    for (const p of participacionesActuales) {
+      if (p.latInicial !== null && p.lonInicial !== null) {
+        dibujarPosicionInicial(ctx, escala, p);
+      }
+    }
   }
+
+  // Si estamos en modo ubicar y ya se eligió un punto, dibujamos el preview
+  // mientras se arrastra para fijar el heading.
+  if (modoUbicar && modoUbicar.lat !== null && modoUbicar.lon !== null) {
+    dibujarPreviewUbicar(ctx, escala);
+  }
+}
+
+function dibujarPosicionInicial(ctx: CanvasRenderingContext2D, escala: number, p: Participacion): void {
+  if (!cartaCache || p.latInicial === null || p.lonInicial === null) return;
+  const { esquinaNW, esquinaSE } = cartaCache;
+  const fx = (p.lonInicial - esquinaNW.lon) / (esquinaSE.lon - esquinaNW.lon);
+  const fy = (esquinaNW.lat - p.latInicial) / (esquinaNW.lat - esquinaSE.lat);
+  const px = esquinaNW.px + fx * (esquinaSE.px - esquinaNW.px);
+  const py = esquinaNW.py + fy * (esquinaSE.py - esquinaNW.py);
+  const hdg = p.headingInicial ?? 0;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate((hdg * Math.PI) / 180);
+  const r = 10 / escala;
+  ctx.fillStyle = 'rgba(0, 220, 140, 0.5)';
+  ctx.strokeStyle = 'rgba(0, 220, 140, 0.95)';
+  ctx.lineWidth = 1.5 / escala;
+  ctx.setLineDash([4 / escala, 3 / escala]);
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 1.6);
+  ctx.lineTo(r, r);
+  ctx.lineTo(-r, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(0, 220, 140, 0.95)';
+  ctx.font = `${13 / escala}px ui-monospace, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`OS-${p.ownshipIndex} · ${hdg.toFixed(0)}°`, px, py + 14 / escala);
+}
+
+function dibujarPreviewUbicar(ctx: CanvasRenderingContext2D, escala: number): void {
+  if (!cartaCache || !modoUbicar || modoUbicar.lat === null || modoUbicar.lon === null) return;
+  const { esquinaNW, esquinaSE } = cartaCache;
+  const fx = (modoUbicar.lon - esquinaNW.lon) / (esquinaSE.lon - esquinaNW.lon);
+  const fy = (esquinaNW.lat - modoUbicar.lat) / (esquinaNW.lat - esquinaSE.lat);
+  const px = esquinaNW.px + fx * (esquinaSE.px - esquinaNW.px);
+  const py = esquinaNW.py + fy * (esquinaSE.py - esquinaNW.py);
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate((modoUbicar.headingDeg * Math.PI) / 180);
+  const r = 12 / escala;
+  ctx.fillStyle = 'rgba(255, 200, 0, 0.85)';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1.5 / escala;
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 1.6);
+  ctx.lineTo(r, r);
+  ctx.lineTo(-r, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Línea de heading larga, para que se vea al arrastrar.
+  ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
+  ctx.lineWidth = 2 / escala;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, -80 / escala);
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255, 200, 0, 1)';
+  ctx.font = `${13 / escala}px ui-monospace, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`OS-${modoUbicar.ownshipIndex} · ${modoUbicar.headingDeg.toFixed(0)}°`, px, py + 16 / escala);
 }
 
 function dibujarBuque(ctx: CanvasRenderingContext2D, escala: number, b: EstadoBuqueDTO): void {
@@ -540,6 +714,100 @@ window.addEventListener('resize', redraw);
 document.getElementById('logoutBtn')!.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   location.href = '/login.html';
+});
+
+// =============================================================================
+// Modo "ubicar barco" — flujo estilo Melipal
+// =============================================================================
+
+function iniciarModoUbicar(partId: number, ownshipIndex: number, alumnoNombre: string): void {
+  if (sesionEstado !== 'preparada') return;
+  modoUbicar = {
+    partId,
+    ownshipIndex,
+    alumnoNombre,
+    lat: null,
+    lon: null,
+    headingDeg: 0,
+    arrastrando: false,
+  };
+  modoBanner.hidden = false;
+  modoTexto.textContent = `Ubicar OS-${ownshipIndex} (${alumnoNombre}): hacé click en la carta y arrastrá para fijar el rumbo.`;
+  cartaViewport.classList.add('modo-ubicar');
+}
+
+function cancelarModoUbicar(): void {
+  if (!modoUbicar) return;
+  modoUbicar = null;
+  modoBanner.hidden = true;
+  cartaViewport.classList.remove('modo-ubicar');
+  redraw();
+}
+
+modoCancelar.addEventListener('click', cancelarModoUbicar);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modoUbicar) cancelarModoUbicar();
+});
+
+// Convierte un click en el canvas a coordenadas lat/lon de la carta.
+function eventoALatLon(ev: MouseEvent): { lat: number; lon: number } | null {
+  if (!cartaCache) return null;
+  const rect = canvas.getBoundingClientRect();
+  // El canvas tiene style.width/height; usamos esos para el factor display.
+  const escalaDisp = canvas.clientWidth / (imagenCache?.naturalWidth ?? 1);
+  const cx = (ev.clientX - rect.left) / escalaDisp;
+  const cy = (ev.clientY - rect.top) / escalaDisp;
+  const { esquinaNW, esquinaSE } = cartaCache;
+  const fx = (cx - esquinaNW.px) / (esquinaSE.px - esquinaNW.px);
+  const fy = (cy - esquinaNW.py) / (esquinaSE.py - esquinaNW.py);
+  const lon = esquinaNW.lon + fx * (esquinaSE.lon - esquinaNW.lon);
+  const lat = esquinaNW.lat - fy * (esquinaNW.lat - esquinaSE.lat);
+  return { lat, lon };
+}
+
+canvas.addEventListener('mousedown', (ev) => {
+  if (!modoUbicar) return;
+  const ll = eventoALatLon(ev);
+  if (!ll) return;
+  modoUbicar.lat = ll.lat;
+  modoUbicar.lon = ll.lon;
+  modoUbicar.headingDeg = 0;
+  modoUbicar.arrastrando = true;
+  redraw();
+});
+
+canvas.addEventListener('mousemove', (ev) => {
+  if (!modoUbicar || !modoUbicar.arrastrando || modoUbicar.lat === null || modoUbicar.lon === null) return;
+  if (!cartaCache) return;
+  const ll = eventoALatLon(ev);
+  if (!ll) return;
+  // Heading desde el punto fijado hacia el cursor: norte = 0°, este = 90°.
+  // Aproximamos con escala plana porque la carta es chica (≤ pocas decenas de millas).
+  const dLat = ll.lat - modoUbicar.lat;
+  const dLon = (ll.lon - modoUbicar.lon) * Math.cos((modoUbicar.lat * Math.PI) / 180);
+  const rad = Math.atan2(dLon, dLat); // 0 = norte; aumenta horario
+  let deg = (rad * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+  modoUbicar.headingDeg = deg;
+  redraw();
+});
+
+canvas.addEventListener('mouseup', async () => {
+  if (!modoUbicar || !modoUbicar.arrastrando) return;
+  if (modoUbicar.lat === null || modoUbicar.lon === null) {
+    modoUbicar.arrastrando = false;
+    return;
+  }
+  modoUbicar.arrastrando = false;
+  const { partId, lat, lon, headingDeg } = modoUbicar;
+  cancelarModoUbicar();
+  await guardarPosicion(partId, lat, lon, headingDeg);
+});
+
+canvas.addEventListener('mouseleave', () => {
+  // Si el mouse sale del canvas mientras arrastraba, dejamos de seguir el heading
+  // pero conservamos el punto. El usuario puede volver a entrar y seguir, o soltar.
+  if (modoUbicar) modoUbicar.arrastrando = false;
 });
 
 void init();

@@ -66,7 +66,19 @@ export interface Participacion {
   alumnoEmail: string;
   alumnoNombre: string;
   ownshipIndex: number;
+  // Posición inicial elegida por el profesor antes de abrir la sesión.
+  // Si vienen null el registry usa el reparto automático alrededor del centro
+  // de la carta. Una vez abierta la sesión no se modifican más.
+  latInicial: number | null;
+  lonInicial: number | null;
+  headingInicial: number | null;
   createdAt: string;
+}
+
+export interface SetPosicionInicialRequest {
+  lat: number;
+  lon: number;
+  headingDeg: number;
 }
 
 // El alumno ve esto cuando pide /api/mis-sesiones: solo sesiones abiertas
