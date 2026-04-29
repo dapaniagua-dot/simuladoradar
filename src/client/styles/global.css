@@ -530,3 +530,40 @@ td a:hover { text-decoration: underline; }
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ============================================================
+   Comunicaciones (VHF / Navtex / DM) — MVP 6
+   ============================================================ */
+.panel-comm { display: flex; flex-direction: column; gap: 4px; }
+.comm-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.comm-row label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.comm-row select { flex: 1; padding: 3px 6px; font-size: 12px; }
+
+.comm-list {
+  background: #061a25;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  height: 130px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.comm-list-narrow { height: 80px; }
+.comm-item { line-height: 1.3; word-break: break-word; }
+.comm-time { color: var(--muted); font-size: 10px; }
+.comm-input { display: flex; gap: 4px; margin-top: 4px; }
+.comm-input input { flex: 1; padding: 4px 6px; font-size: 12px; }
+.comm-input .btn-sm { padding: 4px 10px; }
+
+/* Variante en sesion.html (lado profesor): grilla de 3 paneles */
+.comm-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.comm-grid > div { display: flex; flex-direction: column; gap: 4px; }
+.comm-grid .comm-list { height: 150px; }

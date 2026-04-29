@@ -142,10 +142,24 @@
           </div>
         </section>
 
-        <!-- Placeholder MVP 6: VHF y Navtex -->
-        <section class="panel panel-placeholder">
-          <h3 class="panel-titulo">VHF / NAVTEX</h3>
-          <p class="placeholder">Comunicaciones VHF y Navtex se incorporan en MVP 6.</p>
+        <!-- VHF + Navtex + DMs del profesor (MVP 6) -->
+        <section class="panel panel-comm">
+          <h3 class="panel-titulo">VHF 3001</h3>
+          <div class="comm-row">
+            <label>CH</label>
+            <select id="vhfCanal"></select>
+          </div>
+          <div id="vhfMessages" class="comm-list"></div>
+          <form id="vhfForm" class="comm-input">
+            <input type="text" id="vhfInput" maxlength="500" placeholder="Mensaje de radio..." />
+            <button type="submit" class="btn-sm">TX</button>
+          </form>
+
+          <h3 class="panel-titulo" style="margin-top: 12px;">NAVTEX</h3>
+          <div id="navtexMessages" class="comm-list comm-list-narrow"></div>
+
+          <h3 class="panel-titulo" style="margin-top: 12px;">MENSAJES INSTRUCTOR</h3>
+          <div id="dmMessages" class="comm-list comm-list-narrow"></div>
         </section>
       </div>
     </aside>

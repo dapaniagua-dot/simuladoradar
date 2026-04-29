@@ -3,8 +3,18 @@
 // y se emite por WebSocket a los clientes conectados.
 
 import { MODELO_DEFAULT, type ModeloBuque } from './buques.js';
-import type { EstadoBuqueDTO, EstadoAmbienteDTO, TelegrafoId, TickPayload } from '../../shared/types.js';
+import type {
+  EstadoBuqueDTO,
+  EstadoAmbienteDTO,
+  TelegrafoId,
+  TickPayload,
+  MensajeVHF,
+  MensajeNavtex,
+  MensajePrivado,
+} from '../../shared/types.js';
 export type { TickPayload };
+
+const HISTORIAL_MENSAJES_MAX = 100;
 
 const TICK_HZ = 10;
 const TICK_MS = 1000 / TICK_HZ;
@@ -56,6 +66,12 @@ export class Mundo {
   private timer: NodeJS.Timeout | null = null;
   private ultimoTick = Date.now();
   private pausado = false;
+
+  // Historiales acotados de mensajes para que un cliente que se reconecta
+  // pueda recibir los últimos N mensajes sin tener que re-loguear el chat.
+  private mensajesVHF: MensajeVHF[] = [];
+  private mensajesNavtex: MensajeNavtex[] = [];
+  private mensajesPrivados: MensajePrivado[] = [];
 
   // Por ahora el ambiente es fijo. En el futuro se configura desde la sesión.
   private ambiente: EstadoAmbienteDTO = {
@@ -163,6 +179,36 @@ export class Mundo {
 
   estaPausado(): boolean {
     return this.pausado;
+  }
+
+  // ===== Mensajería =====
+  guardarVHF(m: MensajeVHF): void {
+    this.mensajesVHF.push(m);
+    while (this.mensajesVHF.length > HISTORIAL_MENSAJES_MAX) this.mensajesVHF.shift();
+  }
+  guardarNavtex(m: MensajeNavtex): void {
+    this.mensajesNavtex.push(m);
+    while (this.mensajesNavtex.length > HISTORIAL_MENSAJES_MAX) this.mensajesNavtex.shift();
+  }
+  guardarPrivado(m: MensajePrivado): void {
+    this.mensajesPrivados.push(m);
+    while (this.mensajesPrivados.length > HISTORIAL_MENSAJES_MAX) this.mensajesPrivados.shift();
+  }
+
+  // Snapshot de los mensajes recientes — los nuevos clientes los reciben al
+  // conectarse para no quedarse en blanco. Los privados se filtran por user.
+  snapshotMensajes(userId: number): {
+    vhf: MensajeVHF[];
+    navtex: MensajeNavtex[];
+    privados: MensajePrivado[];
+  } {
+    return {
+      vhf: [...this.mensajesVHF],
+      navtex: [...this.mensajesNavtex],
+      privados: this.mensajesPrivados.filter(
+        (m) => m.deUserId === userId || m.paraUserId === userId,
+      ),
+    };
   }
 
   estadoActual(): TickPayload {

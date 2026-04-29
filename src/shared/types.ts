@@ -148,6 +148,53 @@ export interface ShipControlPayload {
   autopilotOn?: boolean;
 }
 
+// =============================================================================
+// Comunicaciones (MVP 6): VHF, Navtex, mensajes privados
+// =============================================================================
+
+// Canales VHF que soporta el simulador. 16 es el universal de emergencia y
+// llamada inicial; el resto se usa para conversaciones después del contacto.
+export const CANALES_VHF = [6, 8, 10, 12, 13, 14, 16, 67, 71, 72, 77] as const;
+export type CanalVHF = (typeof CANALES_VHF)[number];
+
+export interface MensajeVHF {
+  id: string;
+  canal: CanalVHF;
+  remitenteUserId: number;
+  remitenteNombre: string;     // nombre legible (ej: "Profesor", "OS-1: Juan Pérez")
+  texto: string;
+  ts: number;                  // timestamp ms
+}
+
+export interface VHFTransmitPayload {
+  canal: CanalVHF;
+  texto: string;
+}
+
+export interface MensajeNavtex {
+  id: string;
+  texto: string;
+  ts: number;
+}
+
+export interface NavtexSendPayload {
+  texto: string;
+}
+
+// Mensaje privado de un profesor a un alumno específico de su sesión.
+export interface MensajePrivado {
+  id: string;
+  deUserId: number;
+  paraUserId: number;
+  texto: string;
+  ts: number;
+}
+
+export interface DmSendPayload {
+  paraUserId: number;
+  texto: string;
+}
+
 // Resultado del parser de cartas (.map). Coordenadas siempre en grados decimales
 // (positivo norte / este, negativo sur / oeste).
 export interface CartaCoord {

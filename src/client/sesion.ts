@@ -4,6 +4,9 @@ import type {
   CartaParseada,
   EstadoBuqueDTO,
   LoginResponse,
+  MensajeNavtex,
+  MensajePrivado,
+  MensajeVHF,
   Participacion,
   PublicUser,
   Sesion,
@@ -36,6 +39,11 @@ let imagenCache: HTMLImageElement | null = null;
 let socket: Socket | null = null;
 let ultimoTick: TickPayload | null = null;
 let pausado = false;
+let userId = 0;
+const mensajesVHF: MensajeVHF[] = [];
+const mensajesNavtex: MensajeNavtex[] = [];
+const mensajesPrivados: MensajePrivado[] = [];
+let participacionesActuales: Participacion[] = [];
 
 async function init(): Promise<void> {
   const me = await fetch('/api/auth/me', { credentials: 'include' });
@@ -48,6 +56,7 @@ async function init(): Promise<void> {
     location.href = '/dashboard.html';
     return;
   }
+  userId = user.id;
   userBadge.textContent = `${user.nombre} (${user.role})`;
 
   const params = new URLSearchParams(location.search);
@@ -114,6 +123,140 @@ function conectarSocket(): void {
     socket = null;
     void loadSesion();
   });
+  socket.on('chat:snapshot', (snap: { vhf: MensajeVHF[]; navtex: MensajeNavtex[]; privados: MensajePrivado[] }) => {
+    mensajesVHF.splice(0, mensajesVHF.length, ...snap.vhf.filter((m) => m.canal === 16));
+    mensajesNavtex.splice(0, mensajesNavtex.length, ...snap.navtex);
+    mensajesPrivados.splice(0, mensajesPrivados.length, ...snap.privados);
+    refrescarComms();
+  });
+  socket.on('vhf:message', (m: MensajeVHF) => {
+    if (m.canal !== 16) return; // por ahora el profesor escucha solo canal 16
+    mensajesVHF.push(m);
+    refrescarComms();
+  });
+  socket.on('navtex:message', (m: MensajeNavtex) => {
+    mensajesNavtex.push(m);
+    refrescarComms();
+  });
+  socket.on('dm:message', (m: MensajePrivado) => {
+    if (m.deUserId !== userId && m.paraUserId !== userId) return;
+    mensajesPrivados.push(m);
+    refrescarComms();
+  });
+
+  cablearComunicaciones();
+  document.getElementById('commPanel')!.hidden = false;
+}
+
+function cablearComunicaciones(): void {
+  const vhfForm = document.getElementById('vhfForm') as HTMLFormElement | null;
+  const vhfInput = document.getElementById('vhfInput') as HTMLInputElement | null;
+  const navtexForm = document.getElementById('navtexForm') as HTMLFormElement | null;
+  const navtexInput = document.getElementById('navtexInput') as HTMLInputElement | null;
+  const dmForm = document.getElementById('dmForm') as HTMLFormElement | null;
+  const dmInput = document.getElementById('dmInput') as HTMLInputElement | null;
+
+  if (vhfForm && vhfInput && !vhfForm.dataset.wired) {
+    vhfForm.dataset.wired = '1';
+    vhfForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const texto = vhfInput.value.trim();
+      if (!texto) return;
+      socket?.emit('vhf:transmit', { canal: 16, texto });
+      vhfInput.value = '';
+    });
+  }
+  if (navtexForm && navtexInput && !navtexForm.dataset.wired) {
+    navtexForm.dataset.wired = '1';
+    navtexForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const texto = navtexInput.value.trim();
+      if (!texto) return;
+      socket?.emit('navtex:send', { texto });
+      navtexInput.value = '';
+    });
+  }
+  if (dmForm && dmInput && !dmForm.dataset.wired) {
+    dmForm.dataset.wired = '1';
+    dmForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const select = document.getElementById('dmDestino') as HTMLSelectElement;
+      const para = Number(select.value);
+      const texto = dmInput.value.trim();
+      if (!texto || !Number.isFinite(para) || para <= 0) return;
+      socket?.emit('dm:send', { paraUserId: para, texto });
+      dmInput.value = '';
+    });
+  }
+  refrescarDmDestinos();
+}
+
+function refrescarDmDestinos(): void {
+  const select = document.getElementById('dmDestino') as HTMLSelectElement | null;
+  if (!select) return;
+  const valorPrev = select.value;
+  select.innerHTML = '';
+  if (participacionesActuales.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Sin alumnos asignados';
+    opt.disabled = true;
+    select.appendChild(opt);
+    return;
+  }
+  for (const p of participacionesActuales) {
+    const opt = document.createElement('option');
+    opt.value = String(p.alumnoId);
+    opt.textContent = `OS-${p.ownshipIndex} · ${p.alumnoNombre}`;
+    select.appendChild(opt);
+  }
+  if (valorPrev && participacionesActuales.some((p) => String(p.alumnoId) === valorPrev)) {
+    select.value = valorPrev;
+  }
+}
+
+function refrescarComms(): void {
+  const vhfList = document.getElementById('vhfMessages') as HTMLDivElement | null;
+  const navList = document.getElementById('navtexMessages') as HTMLDivElement | null;
+  const dmList = document.getElementById('dmMessages') as HTMLDivElement | null;
+  if (vhfList) {
+    vhfList.innerHTML = mensajesVHF
+      .slice(-50)
+      .map((m) => `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> <strong>${escapeHtml(m.remitenteNombre)}:</strong> ${escapeHtml(m.texto)}</div>`)
+      .join('');
+    vhfList.scrollTop = vhfList.scrollHeight;
+  }
+  if (navList) {
+    navList.innerHTML = mensajesNavtex
+      .slice(-30)
+      .map((m) => `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> ${escapeHtml(m.texto)}</div>`)
+      .join('');
+    navList.scrollTop = navList.scrollHeight;
+  }
+  if (dmList) {
+    dmList.innerHTML = mensajesPrivados
+      .slice(-30)
+      .map((m) => {
+        const direccion = m.deUserId === userId ? 'Yo →' : '← Alumno';
+        return `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> <em>${direccion}</em> ${escapeHtml(m.texto)}</div>`;
+      })
+      .join('');
+    dmList.scrollTop = dmList.scrollHeight;
+  }
+}
+
+function formatHora(ts: number): string {
+  const d = new Date(ts);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function pad(n: number): string {
+  return n.toString().padStart(2, '0');
+}
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => {
+    const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return map[c] ?? c;
+  });
 }
 
 async function loadCarta(): Promise<void> {
@@ -158,6 +301,8 @@ async function loadParticipaciones(): Promise<void> {
     return;
   }
   const { participaciones } = (await res.json()) as { participaciones: Participacion[] };
+  participacionesActuales = participaciones;
+  refrescarDmDestinos();
   if (participaciones.length === 0) {
     alumnosLista.innerHTML = `<p class="placeholder">Todavía no hay alumnos asignados a esta sesión.</p>`;
     return;

@@ -8,7 +8,17 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { sesiones, participaciones, users } from '../db/schema.js';
 import { registry, roomDeSesion } from '../simulacion/registry.js';
-import type { ShipControlPayload } from '../../shared/types.js';
+import {
+  CANALES_VHF,
+  type ShipControlPayload,
+  type VHFTransmitPayload,
+  type NavtexSendPayload,
+  type DmSendPayload,
+  type MensajeVHF,
+  type MensajeNavtex,
+  type MensajePrivado,
+  type CanalVHF,
+} from '../../shared/types.js';
 
 // Contexto que cada conexión socket tiene asociado tras autenticar.
 interface SocketCtx {
@@ -16,6 +26,7 @@ interface SocketCtx {
   role: 'admin' | 'profesor' | 'alumno';
   sesionId: number;
   ownshipIndex?: number; // sólo para alumnos
+  nombre: string;
 }
 
 export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandler): void {
@@ -53,6 +64,7 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
         userId: user.id,
         role: user.role as SocketCtx['role'],
         sesionId,
+        nombre: user.nombre,
       };
 
       if (user.role === 'admin') {
@@ -96,6 +108,9 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
     const mundo = registry.obtener(ctx.sesionId);
     if (mundo) {
       socket.emit('world:tick', mundo.estadoActual());
+      // Y los mensajes recientes (VHF / Navtex / privados que le tocan)
+      // para que el chat no aparezca vacío al refrescar.
+      socket.emit('chat:snapshot', mundo.snapshotMensajes(ctx.userId));
     }
 
     // Eventos del cliente
@@ -115,6 +130,67 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       if (typeof payload.autopilotOn === 'boolean') {
         mundo.setAutopilot(ctx.ownshipIndex, payload.autopilotOn);
       }
+    });
+
+    // ===== VHF: cualquiera transmite, todos los conectados a la sala
+    // reciben (en el cliente se filtra por canal sintonizado). =====
+    socket.on('vhf:transmit', (payload: VHFTransmitPayload) => {
+      const texto = (payload.texto ?? '').trim();
+      if (!texto || texto.length > 500) return;
+      const canalNum = Number(payload.canal);
+      if (!CANALES_VHF.includes(canalNum as CanalVHF)) return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo) return;
+      const remitenteNombre = ctx.role === 'alumno'
+        ? `OS-${ctx.ownshipIndex}: ${ctx.nombre}`
+        : ctx.nombre;
+      const mensaje: MensajeVHF = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        canal: canalNum as CanalVHF,
+        remitenteUserId: ctx.userId,
+        remitenteNombre,
+        texto,
+        ts: Date.now(),
+      };
+      mundo.guardarVHF(mensaje);
+      io.to(roomDeSesion(ctx.sesionId)).emit('vhf:message', mensaje);
+    });
+
+    // ===== Navtex: solo profesor / admin emiten. Todos en la sala reciben. =====
+    socket.on('navtex:send', (payload: NavtexSendPayload) => {
+      if (ctx.role === 'alumno') return;
+      const texto = (payload.texto ?? '').trim();
+      if (!texto || texto.length > 1000) return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo) return;
+      const mensaje: MensajeNavtex = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        texto,
+        ts: Date.now(),
+      };
+      mundo.guardarNavtex(mensaje);
+      io.to(roomDeSesion(ctx.sesionId)).emit('navtex:message', mensaje);
+    });
+
+    // ===== Mensaje privado: solo profesor → alumno específico de la sesión. =====
+    socket.on('dm:send', async (payload: DmSendPayload) => {
+      if (ctx.role === 'alumno') return;
+      const texto = (payload.texto ?? '').trim();
+      const para = Number(payload.paraUserId);
+      if (!texto || texto.length > 500 || !Number.isFinite(para)) return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo) return;
+      const mensaje: MensajePrivado = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        deUserId: ctx.userId,
+        paraUserId: para,
+        texto,
+        ts: Date.now(),
+      };
+      mundo.guardarPrivado(mensaje);
+      // A toda la sala — el cliente filtra; o más específico, sólo a sockets
+      // del receptor. Por simplicidad emitimos a la sala y filtramos en cliente.
+      io.to(roomDeSesion(ctx.sesionId)).emit('dm:message', mensaje);
     });
 
     socket.on('disconnect', () => {

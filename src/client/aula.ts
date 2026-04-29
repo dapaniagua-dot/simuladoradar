@@ -1,10 +1,14 @@
 import { io, type Socket } from 'socket.io-client';
 import { Dial } from './aula/dial.js';
 import { Telegrafo, POSICIONES as POSICIONES_TELEGRAFO } from './aula/telegrafo.js';
+import { CANALES_VHF, type CanalVHF } from '../shared/types.js';
 import type {
   CartaParseada,
   EstadoBuqueDTO,
   LoginResponse,
+  MensajeNavtex,
+  MensajePrivado,
+  MensajeVHF,
   ShipControlPayload,
   TelegrafoId,
   TickPayload,
@@ -76,6 +80,13 @@ let dialWindDirection: Dial | null = null;
 // Para no spamear el server con cada tecla, debounceamos los inputs numéricos.
 let rudderDebounce: ReturnType<typeof setTimeout> | null = null;
 
+// Estado de comunicaciones (MVP 6).
+let canalActualVHF: CanalVHF = 16;
+let userId = 0;
+const mensajesVHFPorCanal = new Map<CanalVHF, MensajeVHF[]>();
+const mensajesNavtex: MensajeNavtex[] = [];
+const mensajesPrivados: MensajePrivado[] = [];
+
 // ----- Init ----------------------------------------------------------------
 async function init(): Promise<void> {
   const meRes = await fetch('/api/auth/me', { credentials: 'include' });
@@ -88,6 +99,7 @@ async function init(): Promise<void> {
     location.href = '/dashboard.html';
     return;
   }
+  userId = user.id;
   userBadge.textContent = `${user.nombre} (${user.role})`;
 
   const params = new URLSearchParams(location.search);
@@ -123,6 +135,7 @@ async function init(): Promise<void> {
 
   inicializarWidgets();
   cablearControles();
+  cablearComunicaciones();
   conectarSocket();
   redraw();
 }
@@ -237,6 +250,34 @@ function conectarSocket(): void {
     connBadge.textContent = 'desconectado';
     connBadge.className = 'badge badge-preparada';
   });
+  socket.on('chat:snapshot', (snap: { vhf: MensajeVHF[]; navtex: MensajeNavtex[]; privados: MensajePrivado[] }) => {
+    mensajesVHFPorCanal.clear();
+    for (const m of snap.vhf) {
+      const list = mensajesVHFPorCanal.get(m.canal) ?? [];
+      list.push(m);
+      mensajesVHFPorCanal.set(m.canal, list);
+    }
+    mensajesNavtex.splice(0, mensajesNavtex.length, ...snap.navtex);
+    mensajesPrivados.splice(0, mensajesPrivados.length, ...snap.privados);
+    refrescarVHF();
+    refrescarNavtex();
+    refrescarDM();
+  });
+  socket.on('vhf:message', (m: MensajeVHF) => {
+    const list = mensajesVHFPorCanal.get(m.canal) ?? [];
+    list.push(m);
+    mensajesVHFPorCanal.set(m.canal, list);
+    if (m.canal === canalActualVHF) refrescarVHF();
+  });
+  socket.on('navtex:message', (m: MensajeNavtex) => {
+    mensajesNavtex.push(m);
+    refrescarNavtex();
+  });
+  socket.on('dm:message', (m: MensajePrivado) => {
+    if (m.deUserId !== userId && m.paraUserId !== userId) return;
+    mensajesPrivados.push(m);
+    refrescarDM();
+  });
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
     // Aislamos cualquier excepción del actualizado de widgets para que no
@@ -260,6 +301,75 @@ function conectarSocket(): void {
 
 function enviarComando(payload: ShipControlPayload): void {
   socket?.emit('ship:control', payload);
+}
+
+// ----- Comunicaciones -----
+function cablearComunicaciones(): void {
+  const select = document.getElementById('vhfCanal') as HTMLSelectElement;
+  for (const canal of CANALES_VHF) {
+    const opt = document.createElement('option');
+    opt.value = String(canal);
+    opt.textContent = String(canal).padStart(2, '0');
+    if (canal === canalActualVHF) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener('change', () => {
+    canalActualVHF = Number(select.value) as CanalVHF;
+    refrescarVHF();
+  });
+
+  const form = document.getElementById('vhfForm') as HTMLFormElement;
+  const input = document.getElementById('vhfInput') as HTMLInputElement;
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const texto = input.value.trim();
+    if (!texto) return;
+    socket?.emit('vhf:transmit', { canal: canalActualVHF, texto });
+    input.value = '';
+  });
+}
+
+function refrescarVHF(): void {
+  const list = document.getElementById('vhfMessages') as HTMLDivElement;
+  const msgs = mensajesVHFPorCanal.get(canalActualVHF) ?? [];
+  list.innerHTML = msgs
+    .slice(-50)
+    .map((m) => `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> <strong>${escape(m.remitenteNombre)}:</strong> ${escape(m.texto)}</div>`)
+    .join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function refrescarNavtex(): void {
+  const list = document.getElementById('navtexMessages') as HTMLDivElement;
+  list.innerHTML = mensajesNavtex
+    .slice(-30)
+    .map((m) => `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> ${escape(m.texto)}</div>`)
+    .join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function refrescarDM(): void {
+  const list = document.getElementById('dmMessages') as HTMLDivElement;
+  list.innerHTML = mensajesPrivados
+    .slice(-30)
+    .map((m) => {
+      const direccion = m.deUserId === userId ? 'Yo →' : '← Instructor';
+      return `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> <em>${direccion}</em> ${escape(m.texto)}</div>`;
+    })
+    .join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function formatHora(ts: number): string {
+  const d = new Date(ts);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+function escape(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => {
+    const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return map[c] ?? c;
+  });
 }
 
 function ultimoMioOnly(): EstadoBuqueDTO | null {
