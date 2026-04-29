@@ -25,6 +25,8 @@ export interface PPIConfig {
   // Bearing del EBL almacenado siempre en TRUE (0..360°, desde norte).
   // La conversión a/desde RELATIVE la hace el cliente.
   eblBearingTrue: number;
+  vrmActive: boolean;
+  vrmRangeNm: number; // radio del VRM en millas náuticas (>0)
 }
 
 // Velocidad de barrido. Un radar náutico real gira a 24 RPM (1 vuelta cada
@@ -173,6 +175,9 @@ export class PPI {
     if (config.eblActive) {
       this.dibujarEBL(ctx, radius, config.eblBearingTrue);
     }
+    if (config.vrmActive) {
+      this.dibujarVRM(ctx, config.vrmRangeNm, pixelsPorMilla, radius);
+    }
 
     ctx.restore();
 
@@ -314,6 +319,27 @@ export class PPI {
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(radius, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // Variable Range Marker. Círculo concéntrico al barco propio, con radio
+  // configurable. El alumno lo ajusta hasta que toque un blanco y lee la
+  // distancia exacta en el panel.
+  private dibujarVRM(
+    ctx: CanvasRenderingContext2D,
+    rangeNm: number,
+    pixelsPorMilla: number,
+    radiusMax: number,
+  ): void {
+    const r = Math.min(radiusMax, Math.max(2, rangeNm * pixelsPorMilla));
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 200, 120, 0.85)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();

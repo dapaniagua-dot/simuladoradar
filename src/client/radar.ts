@@ -45,6 +45,8 @@ const config = {
   mode: 'NORTH_UP' as PPIMode,
   eblActive: false,
   eblBearingTrue: 0,
+  vrmActive: false,
+  vrmRangeNm: 1,
 };
 
 let eblMode: EblMode = 'TRUE';
@@ -133,6 +135,62 @@ function cablearControles(): void {
   });
 
   cablearEBL();
+  cablearVRM();
+}
+
+function cablearVRM(): void {
+  const btnVrm = document.getElementById('btnVrm') as HTMLButtonElement;
+  const vrmControls = document.getElementById('vrmControls') as HTMLDivElement;
+  const vrmRangeInput = document.getElementById('vrmRangeInput') as HTMLInputElement;
+
+  btnVrm.addEventListener('click', () => {
+    config.vrmActive = !config.vrmActive;
+    btnVrm.classList.toggle('active', config.vrmActive);
+    btnVrm.textContent = config.vrmActive ? 'VRM ON' : 'VRM OFF';
+    vrmControls.hidden = !config.vrmActive;
+  });
+
+  vrmRangeInput.addEventListener('input', () => {
+    const v = Number(vrmRangeInput.value);
+    if (!Number.isFinite(v) || v <= 0) return;
+    config.vrmRangeNm = Math.min(48, v);
+  });
+
+  // Click + drag en el canvas: el radio del VRM = distancia del cursor al
+  // centro del PPI, convertida a millas.
+  const canvas = document.getElementById('ppiCanvas') as HTMLCanvasElement;
+  let dragging = false;
+  const onMove = (clientX: number, clientY: number): void => {
+    if (!config.vrmActive) return;
+    const rect = canvas.getBoundingClientRect();
+    const dx = clientX - rect.left - rect.width / 2;
+    const dy = clientY - rect.top - rect.height / 2;
+    const distPx = Math.hypot(dx, dy);
+    if (distPx < 6) return;
+    // pixelsPorMilla en el cliente: el PPI usa radius = (size/2 - 30).
+    // Replicamos el cálculo aquí para no acoplarnos a la clase PPI.
+    const radius = Math.min(rect.width, rect.height) / 2 - 30;
+    const pixelsPorMilla = radius / config.escalaNm;
+    if (pixelsPorMilla <= 0) return;
+    const rangeNm = distPx / pixelsPorMilla;
+    config.vrmRangeNm = Math.max(0.01, Math.min(config.escalaNm, rangeNm));
+  };
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (!config.vrmActive) return;
+    // Si EBL también está activo, EBL gana en este click (ya tiene su propio
+    // listener). Una solución sería un mode picker, pero para MVP lo dejamos
+    // así: el handler del EBL se dispara primero por orden de cablear.
+    dragging = true;
+    onMove(e.clientX, e.clientY);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    onMove(e.clientX, e.clientY);
+  });
+  window.addEventListener('mouseup', () => {
+    dragging = false;
+  });
 }
 
 function cablearEBL(): void {
@@ -260,6 +318,18 @@ function actualizarStatus(): void {
     // No pisamos el input mientras el usuario está escribiendo.
     if (bearingInput && document.activeElement !== bearingInput) {
       bearingInput.value = userBearing.toFixed(1);
+    }
+  }
+
+  // Actualizar el display del VRM si está activo.
+  if (config.vrmActive) {
+    const rangeDisplay = document.getElementById('vrmRangeDisplay') as HTMLSpanElement | null;
+    const rangeInput = document.getElementById('vrmRangeInput') as HTMLInputElement | null;
+    if (rangeDisplay) {
+      rangeDisplay.textContent = `${config.vrmRangeNm.toFixed(2)} nm`;
+    }
+    if (rangeInput && document.activeElement !== rangeInput) {
+      rangeInput.value = config.vrmRangeNm.toFixed(2);
     }
   }
 }

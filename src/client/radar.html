@@ -78,8 +78,24 @@
       </section>
 
       <section class="panel">
+        <h3 class="panel-titulo">VRM <span class="panel-hint">(Variable Range Marker)</span></h3>
+        <button type="button" id="btnVrm" class="btn-sm btn-toggle">VRM OFF</button>
+        <div id="vrmControls" hidden>
+          <div class="panel-row">
+            <label>Range</label>
+            <span class="display-7seg-sm" id="vrmRangeDisplay">0.00 nm</span>
+          </div>
+          <div class="ebl-input-row">
+            <input type="number" id="vrmRangeInput" min="0.01" max="48" step="0.01" value="1" />
+            <span>nm</span>
+          </div>
+          <p class="placeholder ebl-tip">Tip: con VRM activo, click en el PPI para ajustar el radio.</p>
+        </div>
+      </section>
+
+      <section class="panel">
         <h3 class="panel-titulo">PRÓXIMAS FUNCIONES</h3>
-        <p class="placeholder">VRM y ARPA en los siguientes sub-MVPs (4.8 y 4.9).</p>
+        <p class="placeholder">ARPA en el siguiente sub-MVP (4.9).</p>
       </section>
     </aside>
   </main>
