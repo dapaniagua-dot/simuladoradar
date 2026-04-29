@@ -49,6 +49,14 @@ export class PPI {
   private antennaAngleDeg = 0;
   private lastFrameMs = 0;
 
+  // Posición del barco en el frame anterior, para calcular cuánto se desplazó
+  // y trasladar el canvas de ecos en consecuencia (así los ecos viejos
+  // "viajan hacia atrás" como en un radar real cuando el buque navega).
+  private prevLat: number | null = null;
+  private prevLon: number | null = null;
+  private prevEscalaNm: number | null = null;
+  private prevMode: PPIMode | null = null;
+
   constructor(canvas: HTMLCanvasElement) {
     this.mainCanvas = canvas;
     const main = canvas.getContext('2d');
@@ -86,6 +94,8 @@ export class PPI {
     this.echoesCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.echoesCtx.globalCompositeOperation = 'source-over';
     this.echoesCtx.clearRect(0, 0, this.size, this.size);
+    this.prevLat = null;
+    this.prevLon = null;
   }
 
   // Dibuja el PPI completo. Llamar a 60 fps para barrido suave.
@@ -106,13 +116,55 @@ export class PPI {
     const cx = cssSize / 2;
     const cy = cssSize / 2;
     const radius = cssSize / 2 - 30;
+    const pixelsPorMilla = radius / config.escalaNm;
+    const MILLAS_POR_GRADO_LAT = 60;
+
+    // Si cambió el RANGE o el MODE, los ecos viejos están en otra escala
+    // o rotación → mejor borrarlos.
+    if (
+      (this.prevEscalaNm !== null && this.prevEscalaNm !== config.escalaNm) ||
+      (this.prevMode !== null && this.prevMode !== config.mode)
+    ) {
+      this.clearEchoes();
+    }
+    this.prevEscalaNm = config.escalaNm;
+    this.prevMode = config.mode;
 
     // Avanzar la antena
     const prevAngle = this.antennaAngleDeg;
     this.antennaAngleDeg = (this.antennaAngleDeg + ANTENNA_DEG_PER_SEC * dt) % 360;
     const newAngle = this.antennaAngleDeg;
 
-    // ---------- 1) Fade del canvas de ecos ----------
+    // ---------- 1a) Compensar el desplazamiento del barco ----------
+    // Si el barco se mueve, los ecos viejos en el canvas deben "viajar hacia
+    // atrás" relativo al barco para mantenerse anclados a su posición geográfica.
+    // Trasladamos el contenido del canvas con drawImage sobre sí mismo.
+    if (ownShip && this.prevLat !== null && this.prevLon !== null) {
+      const dN_millas = (ownShip.lat - this.prevLat) * MILLAS_POR_GRADO_LAT;
+      const cosLat = Math.cos((ownShip.lat * Math.PI) / 180);
+      const dE_millas = (ownShip.lon - this.prevLon) * cosLat * MILLAS_POR_GRADO_LAT;
+      const offsetX = -dE_millas * pixelsPorMilla;
+      const offsetY = dN_millas * pixelsPorMilla;
+      if (Math.abs(offsetX) > 0.01 || Math.abs(offsetY) > 0.01) {
+        // drawImage del canvas sobre sí mismo, desplazado. Para evitar que el
+        // browser lea y escriba al mismo buffer (resultado indefinido en algunos
+        // navegadores), copiamos a un canvas temporal primero. Pero en la
+        // práctica, drawImage de un canvas sobre sí mismo está soportado.
+        const ctx = this.echoesCtx;
+        ctx.save();
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        ctx.globalCompositeOperation = 'copy';
+        ctx.drawImage(this.echoesCanvas, offsetX, offsetY, cssSize, cssSize);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.restore();
+      }
+    }
+    if (ownShip) {
+      this.prevLat = ownShip.lat;
+      this.prevLon = ownShip.lon;
+    }
+
+    // ---------- 1b) Fade del canvas de ecos ----------
     this.echoesCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.echoesCtx.globalCompositeOperation = 'destination-out';
     this.echoesCtx.fillStyle = `rgba(0, 0, 0, ${FADE_PER_FRAME})`;
@@ -143,7 +195,6 @@ export class PPI {
       this.echoesCtx.closePath();
       this.echoesCtx.clip();
 
-      const pixelsPorMilla = radius / config.escalaNm;
       if (carta) {
         this.dibujarEcosCarta(this.echoesCtx, ownShip, carta, config.escalaNm, pixelsPorMilla);
       }
