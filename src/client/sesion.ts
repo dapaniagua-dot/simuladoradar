@@ -1,10 +1,13 @@
+import { io, type Socket } from 'socket.io-client';
 import type {
   ApiError,
   CartaParseada,
+  EstadoBuqueDTO,
   LoginResponse,
   Participacion,
   PublicUser,
   Sesion,
+  TickPayload,
 } from '../shared/types.js';
 
 const userBadge = document.getElementById('userBadge') as HTMLSpanElement;
@@ -17,7 +20,10 @@ const loadingMsg = document.getElementById('loadingMsg') as HTMLDivElement;
 const canvas = document.getElementById('cartaCanvas') as HTMLCanvasElement;
 const toggleSegmentos = document.getElementById('toggleSegmentos') as HTMLInputElement;
 const btnAbrir = document.getElementById('btnAbrir') as HTMLButtonElement;
+const btnPausar = document.getElementById('btnPausar') as HTMLButtonElement;
+const btnReanudar = document.getElementById('btnReanudar') as HTMLButtonElement;
 const btnCerrar = document.getElementById('btnCerrar') as HTMLButtonElement;
+const liveBadge = document.getElementById('liveBadge') as HTMLSpanElement;
 const alumnosLista = document.getElementById('alumnosLista') as HTMLDivElement;
 const addAlumnoForm = document.getElementById('addAlumnoForm') as HTMLFormElement;
 const addAlumnoSelect = addAlumnoForm.elements.namedItem('alumnoId') as HTMLSelectElement;
@@ -27,6 +33,9 @@ let sesionId = 0;
 let sesionEstado: Sesion['estado'] = 'preparada';
 let cartaCache: CartaParseada | null = null;
 let imagenCache: HTMLImageElement | null = null;
+let socket: Socket | null = null;
+let ultimoTick: TickPayload | null = null;
+let pausado = false;
 
 async function init(): Promise<void> {
   const me = await fetch('/api/auth/me', { credentials: 'include' });
@@ -73,6 +82,38 @@ async function loadSesion(): Promise<void> {
 function refrescarBotonesEstado(): void {
   btnAbrir.hidden = sesionEstado !== 'preparada';
   btnCerrar.hidden = sesionEstado !== 'abierta';
+  btnPausar.hidden = sesionEstado !== 'abierta' || pausado;
+  btnReanudar.hidden = sesionEstado !== 'abierta' || !pausado;
+  liveBadge.hidden = sesionEstado !== 'abierta';
+  liveBadge.textContent = pausado ? 'PAUSADO' : 'EN VIVO';
+  liveBadge.className = `badge ${pausado ? 'badge-finalizada' : 'badge-abierta'}`;
+
+  // Conectar/desconectar socket según el estado
+  if (sesionEstado === 'abierta' && !socket) {
+    conectarSocket();
+  } else if (sesionEstado !== 'abierta' && socket) {
+    socket.disconnect();
+    socket = null;
+    ultimoTick = null;
+    redraw();
+  }
+}
+
+function conectarSocket(): void {
+  socket = io({ auth: { sesionId }, withCredentials: true });
+  socket.on('world:tick', (payload: TickPayload) => {
+    ultimoTick = payload;
+    if (payload.pausado !== pausado) {
+      pausado = payload.pausado;
+      refrescarBotonesEstado();
+    }
+    redraw();
+  });
+  socket.on('session:closed', () => {
+    socket?.disconnect();
+    socket = null;
+    void loadSesion();
+  });
 }
 
 async function loadCarta(): Promise<void> {
@@ -218,6 +259,28 @@ btnCerrar.addEventListener('click', async () => {
   await Promise.all([loadParticipaciones(), loadAlumnosDisponibles()]);
 });
 
+btnPausar.addEventListener('click', async () => {
+  const res = await fetch(`/api/sesiones/${sesionId}/pausar`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = (await res.json()) as ApiError;
+    alert(err.error ?? 'No se pudo pausar');
+  }
+});
+
+btnReanudar.addEventListener('click', async () => {
+  const res = await fetch(`/api/sesiones/${sesionId}/reanudar`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = (await res.json()) as ApiError;
+    alert(err.error ?? 'No se pudo reanudar');
+  }
+});
+
 function redraw(): void {
   if (!cartaCache || !imagenCache) return;
   const img = imagenCache;
@@ -260,6 +323,52 @@ function redraw(): void {
     }
     ctx.stroke();
   }
+
+  // Render en vivo de los buques de la sesión (si hay tick reciente).
+  if (ultimoTick) {
+    for (const b of ultimoTick.buques) {
+      dibujarBuque(ctx, escala, b);
+    }
+  }
+}
+
+function dibujarBuque(ctx: CanvasRenderingContext2D, escala: number, b: EstadoBuqueDTO): void {
+  if (!cartaCache) return;
+  const { esquinaNW, esquinaSE } = cartaCache;
+  const fx = (b.lon - esquinaNW.lon) / (esquinaSE.lon - esquinaNW.lon);
+  const fy = (esquinaNW.lat - b.lat) / (esquinaNW.lat - esquinaSE.lat);
+  const px = esquinaNW.px + fx * (esquinaSE.px - esquinaNW.px);
+  const py = esquinaNW.py + fy * (esquinaSE.py - esquinaNW.py);
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate((b.headingDeg * Math.PI) / 180);
+  const r = 10 / escala;
+  ctx.fillStyle = 'rgba(0, 220, 140, 0.95)';
+  ctx.strokeStyle = '#003322';
+  ctx.lineWidth = 1.5 / escala;
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 1.6);
+  ctx.lineTo(r, r);
+  ctx.lineTo(-r, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  if (Math.abs(b.velocidadKn) > 0.1) {
+    const largo = Math.min(80, Math.abs(b.velocidadKn) * 2.5) / escala;
+    const sentido = b.velocidadKn >= 0 ? -1 : 1;
+    ctx.strokeStyle = 'rgba(0, 220, 140, 0.7)';
+    ctx.lineWidth = 1.5 / escala;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, sentido * largo);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = 'rgba(0, 220, 140, 1)';
+  ctx.font = `${13 / escala}px ui-monospace, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`OS-${b.ownshipIndex} · ${b.headingDeg.toFixed(0)}° · ${b.velocidadKn.toFixed(1)}kn`, px, py + 14 / escala);
 }
 
 function showError(msg: string): void {

@@ -175,6 +175,52 @@ sesionesRouter.post('/:id/abrir', requireRole('profesor', 'admin'), async (req, 
   res.json({ ok: true });
 });
 
+// Pausa la simulación de una sesión abierta.
+sesionesRouter.post('/:id/pausar', requireRole('profesor', 'admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'ID inválido' });
+    return;
+  }
+  const ses = await loadSesionDelDueno(req, id);
+  if (!ses) {
+    res.status(404).json({ error: 'Sesión no encontrada' });
+    return;
+  }
+  if (ses.estado !== 'abierta') {
+    res.status(409).json({ error: 'Solo se pausa una sesión abierta' });
+    return;
+  }
+  const mundo = registry.obtener(id);
+  if (!mundo) {
+    res.status(409).json({ error: 'No hay simulación activa' });
+    return;
+  }
+  mundo.pausar();
+  res.json({ ok: true });
+});
+
+// Reanuda una sesión pausada.
+sesionesRouter.post('/:id/reanudar', requireRole('profesor', 'admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'ID inválido' });
+    return;
+  }
+  const ses = await loadSesionDelDueno(req, id);
+  if (!ses) {
+    res.status(404).json({ error: 'Sesión no encontrada' });
+    return;
+  }
+  const mundo = registry.obtener(id);
+  if (!mundo) {
+    res.status(409).json({ error: 'No hay simulación activa' });
+    return;
+  }
+  mundo.reanudar();
+  res.json({ ok: true });
+});
+
 // Cambia estado a 'finalizada'. Desde 'abierta' o 'preparada'.
 sesionesRouter.post('/:id/cerrar', requireRole('profesor', 'admin'), async (req, res) => {
   const id = Number(req.params.id);

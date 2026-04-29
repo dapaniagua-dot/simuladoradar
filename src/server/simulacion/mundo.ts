@@ -55,6 +55,7 @@ export class Mundo {
   private buques = new Map<number, EstadoBuque>();
   private timer: NodeJS.Timeout | null = null;
   private ultimoTick = Date.now();
+  private pausado = false;
 
   // Por ahora el ambiente es fijo. En el futuro se configura desde la sesión.
   private ambiente: EstadoAmbienteDTO = {
@@ -147,11 +148,29 @@ export class Mundo {
     this.timer = null;
   }
 
+  pausar(): void {
+    this.pausado = true;
+  }
+
+  reanudar(): void {
+    if (this.pausado) {
+      this.pausado = false;
+      // Reset del último tick para que el dt del siguiente frame no incluya
+      // la duración de la pausa.
+      this.ultimoTick = Date.now();
+    }
+  }
+
+  estaPausado(): boolean {
+    return this.pausado;
+  }
+
   estadoActual(): TickPayload {
     return {
       t: Date.now(),
       buques: [...this.buques.values()].map(toDTO),
       ambiente: { ...this.ambiente, utcTimestamp: Date.now() },
+      pausado: this.pausado,
     };
   }
 
@@ -165,8 +184,12 @@ export class Mundo {
     this.ultimoTick = ahora;
     if (dt <= 0 || dt > 1) return;
 
-    for (const b of this.buques.values()) {
-      this.actualizarBuque(b, dt);
+    // En pausa no actualizamos la física pero seguimos emitiendo ticks para
+    // que los clientes mantengan la conexión y reciban el estado congelado.
+    if (!this.pausado) {
+      for (const b of this.buques.values()) {
+        this.actualizarBuque(b, dt);
+      }
     }
     this.emit(this.estadoActual());
   }

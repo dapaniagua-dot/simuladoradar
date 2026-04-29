@@ -137,6 +137,7 @@ export interface TickPayload {
   t: number;
   buques: EstadoBuqueDTO[];
   ambiente: EstadoAmbienteDTO;
+  pausado: boolean;
 }
 
 // Comandos que el cliente envía al server por Socket.IO.
