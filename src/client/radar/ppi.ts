@@ -12,6 +12,7 @@
 
 import type { CartaParseada, EstadoBuqueDTO } from '../../shared/types.js';
 import { segmentoARelativo, segmentoFueraDeAlcance, latLonAMillasRel } from './coords.js';
+import type { DatosArpa } from './arpa.js';
 
 export type PPIMode = 'NORTH_UP' | 'HEAD_UP';
 
@@ -94,6 +95,7 @@ export class PPI {
     otherShips: EstadoBuqueDTO[],
     carta: CartaParseada | null,
     config: PPIConfig,
+    arpaTargets: DatosArpa[] = [],
   ): void {
     const cssSize = this.size;
     if (cssSize <= 0) return;
@@ -177,6 +179,9 @@ export class PPI {
     }
     if (config.vrmActive) {
       this.dibujarVRM(ctx, config.vrmRangeNm, pixelsPorMilla, radius);
+    }
+    if (arpaTargets.length > 0) {
+      this.dibujarArpaTargets(ctx, arpaTargets, pixelsPorMilla, radius);
     }
 
     ctx.restore();
@@ -343,6 +348,54 @@ export class PPI {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
+  }
+
+  // Símbolo de blanco ARPA: círculo cyan rodeando el eco + vector velocidad
+  // (línea hacia la dirección del rumbo, longitud proporcional a la velocidad)
+  // + etiqueta con el id (T-1, T-2…). Se dibuja en posición geográfica relativa
+  // al barco propio, por lo que rota correctamente con North Up / Head Up.
+  private dibujarArpaTargets(
+    ctx: CanvasRenderingContext2D,
+    targets: DatosArpa[],
+    pixelsPorMilla: number,
+    radiusMax: number,
+  ): void {
+    for (const t of targets) {
+      // Posición del blanco en el PPI (bearing/range → x/y).
+      const ang = ((t.bearingTrue - 90) * Math.PI) / 180;
+      const r = t.rangeNm * pixelsPorMilla;
+      if (r > radiusMax + 10) continue; // fuera del PPI
+      const x = Math.cos(ang) * r;
+      const y = Math.sin(ang) * r;
+
+      // Color: rojo si el blanco es peligroso (CPA < 0.5 nm con TCPA > 0),
+      // cyan si está bajo seguimiento normal.
+      const peligro = t.cpaNm !== null && t.cpaNm < 0.5 && t.tcpaMin !== null && t.tcpaMin > 0;
+      ctx.strokeStyle = peligro ? 'rgba(255, 100, 100, 1)' : 'rgba(120, 230, 255, 1)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Vector velocidad: línea desde el centro del símbolo hacia el course,
+      // longitud proporcional a la velocidad (1 minuto de extrapolación).
+      if (!Number.isNaN(t.courseDeg) && t.speedKn > 0.1) {
+        const angV = ((t.courseDeg - 90) * Math.PI) / 180;
+        const lenNm = (t.speedKn / 60) * 3; // 3 minutos de proyección
+        const lenPx = lenNm * pixelsPorMilla;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(angV) * lenPx, y + Math.sin(angV) * lenPx);
+        ctx.stroke();
+      }
+
+      // Etiqueta con el id
+      ctx.fillStyle = peligro ? 'rgba(255, 100, 100, 1)' : 'rgba(120, 230, 255, 1)';
+      ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(t.id, x + 12, y - 12);
+    }
   }
 
   private dibujarEscala(ctx: CanvasRenderingContext2D, size: number, config: PPIConfig): void {

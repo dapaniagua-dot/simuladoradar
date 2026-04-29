@@ -1,5 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { PPI, ESCALAS_NM, type EscalaNm, type PPIMode } from './radar/ppi.js';
+import { ArpaTracker, type DatosArpa } from './radar/arpa.js';
+import { latLonAMillasRel } from './radar/coords.js';
 import type {
   CartaParseada,
   EstadoBuqueDTO,
@@ -50,6 +52,10 @@ const config = {
 };
 
 let eblMode: EblMode = 'TRUE';
+
+const arpa = new ArpaTracker();
+let arpaAcquireMode = false; // true = el siguiente click adquiere un blanco
+let arpaTargets: DatosArpa[] = [];
 
 async function init(): Promise<void> {
   const meRes = await fetch('/api/auth/me', { credentials: 'include' });
@@ -136,6 +142,106 @@ function cablearControles(): void {
 
   cablearEBL();
   cablearVRM();
+  cablearARPA();
+}
+
+function cablearARPA(): void {
+  const btnAcquire = document.getElementById('btnArpaAcquire') as HTMLButtonElement;
+  const btnCeaseAll = document.getElementById('btnArpaCeaseAll') as HTMLButtonElement;
+  const canvas = document.getElementById('ppiCanvas') as HTMLCanvasElement;
+
+  btnAcquire.addEventListener('click', () => {
+    arpaAcquireMode = !arpaAcquireMode;
+    btnAcquire.classList.toggle('active', arpaAcquireMode);
+    btnAcquire.textContent = arpaAcquireMode ? 'CLICK ECO ROJO…' : 'ACQUIRE';
+    canvas.style.cursor = arpaAcquireMode ? 'crosshair' : '';
+  });
+
+  btnCeaseAll.addEventListener('click', () => {
+    arpa.ceaseAll();
+    refrescarListaArpa();
+  });
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (!arpaAcquireMode) return;
+    const mio = miBuque();
+    if (!mio) return;
+    const rect = canvas.getBoundingClientRect();
+    const dx = e.clientX - rect.left - rect.width / 2;
+    const dy = e.clientY - rect.top - rect.height / 2;
+    const radius = Math.min(rect.width, rect.height) / 2 - 30;
+    const pixelsPorMilla = radius / config.escalaNm;
+
+    // Convertir el click a (xE, yN) millas relativas al barco propio.
+    let bearingPantalla = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+    bearingPantalla = ((bearingPantalla % 360) + 360) % 360;
+    let bearingTrue = bearingPantalla;
+    if (config.mode === 'HEAD_UP') {
+      bearingTrue = (bearingPantalla + mio.headingDeg + 360) % 360;
+    }
+    const distNm = Math.hypot(dx, dy) / pixelsPorMilla;
+    const xE = Math.sin((bearingTrue * Math.PI) / 180) * distNm;
+    const yN = Math.cos((bearingTrue * Math.PI) / 180) * distNm;
+
+    // Buscar el OwnShip más cercano al click (umbral 0.5 nm).
+    let mejor: { idx: number; dist: number } | null = null;
+    for (const b of otrosBuques()) {
+      const rel = latLonAMillasRel(b.lat, b.lon, mio.lat, mio.lon);
+      const d = Math.hypot(rel.xE - xE, rel.yN - yN);
+      if (d < 0.5 && (!mejor || d < mejor.dist)) {
+        mejor = { idx: b.ownshipIndex, dist: d };
+      }
+    }
+    if (mejor) {
+      arpa.adquirirOwnship(mejor.idx);
+      refrescarListaArpa();
+    }
+
+    // Salir del modo acquire después de un click (success o no).
+    arpaAcquireMode = false;
+    btnAcquire.classList.remove('active');
+    btnAcquire.textContent = 'ACQUIRE';
+    canvas.style.cursor = '';
+  });
+}
+
+function refrescarListaArpa(): void {
+  const list = document.getElementById('arpaList') as HTMLDivElement;
+  if (arpaTargets.length === 0) {
+    list.innerHTML = `<p class="placeholder ebl-tip">Sin blancos. Click ACQUIRE y después click sobre un eco rojo del PPI.</p>`;
+    return;
+  }
+  list.innerHTML = '';
+  for (const t of arpaTargets) {
+    const peligro = t.cpaNm !== null && t.cpaNm < 0.5 && t.tcpaMin !== null && t.tcpaMin > 0;
+    const row = document.createElement('div');
+    row.className = `arpa-row${peligro ? ' arpa-peligro' : ''}`;
+    const courseStr = Number.isFinite(t.courseDeg) ? `${t.courseDeg.toFixed(0)}°` : '—';
+    const cpaStr = t.cpaNm !== null ? `${t.cpaNm.toFixed(2)} nm` : '—';
+    const tcpaStr = t.tcpaMin !== null ? `${t.tcpaMin.toFixed(1)} min` : '—';
+    row.innerHTML = `
+      <div class="arpa-row-head">
+        <strong>${t.id}</strong>
+        <button type="button" class="btn-cease" data-id="${t.id}">×</button>
+      </div>
+      <div class="arpa-row-body">
+        <span>BRG ${t.bearingTrue.toFixed(0)}°T</span>
+        <span>RNG ${t.rangeNm.toFixed(2)}nm</span>
+        <span>CRS ${courseStr}</span>
+        <span>SPD ${t.speedKn.toFixed(1)}kn</span>
+        <span>CPA ${cpaStr}</span>
+        <span>TCPA ${tcpaStr}</span>
+      </div>
+    `;
+    list.appendChild(row);
+  }
+  list.querySelectorAll('.btn-cease').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.id!;
+      arpa.ceaseTrack(id);
+      refrescarListaArpa();
+    });
+  });
 }
 
 function cablearVRM(): void {
@@ -290,7 +396,13 @@ function conectarSocket(): void {
   });
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
+    arpa.procesarTick(payload.t, payload.buques);
+    const mio = miBuque();
+    if (mio) {
+      arpaTargets = arpa.evaluar(mio, payload.buques);
+    }
     actualizarStatus();
+    refrescarListaArpa();
   });
   socket.on('session:closed', () => {
     alert('El profesor cerró la sesión.');
@@ -347,7 +459,7 @@ function otrosBuques(): EstadoBuqueDTO[] {
 // Loop de render a 60 FPS para mantener el barrido suave (cuando lo agreguemos en 4.3).
 function loop(): void {
   if (ppi) {
-    ppi.draw(miBuque(), otrosBuques(), cartaCache, config);
+    ppi.draw(miBuque(), otrosBuques(), cartaCache, config, arpaTargets);
   }
   requestAnimationFrame(loop);
 }

@@ -485,3 +485,48 @@ td a:hover { text-decoration: underline; }
 .ebl-tip { font-size: 10px; margin-top: 8px; }
 #eblControls { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 #eblControls .btn-sm { padding: 4px 8px; }
+
+.arpa-actions { display: flex; gap: 4px; margin-bottom: 8px; }
+.arpa-actions .btn-sm { flex: 1; }
+.arpa-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.arpa-row {
+  background: #061a25;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.arpa-row.arpa-peligro {
+  border-color: var(--danger);
+  background: #2a1015;
+}
+.arpa-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.arpa-row-head strong {
+  font-family: ui-monospace, monospace;
+  color: var(--accent);
+}
+.arpa-row.arpa-peligro .arpa-row-head strong { color: var(--danger); }
+.btn-cease {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.btn-cease:hover { background: var(--danger); color: #200; border-color: var(--danger); }
+.arpa-row-body {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
