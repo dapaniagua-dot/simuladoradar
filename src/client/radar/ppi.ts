@@ -31,14 +31,20 @@ const ANTENNA_DEG_PER_SEC = (ANTENNA_RPM * 360) / 60;
 
 // Pasos del afterglow simulado: cada entrada define un sector detrás de la
 // antena (en grados, acumulado) y la opacidad relativa de los ecos en ese
-// sector. La antena va dejando una "estela" cada vez más tenue hasta llegar
-// al fondo (BASE_ALPHA), simulando la persistencia de un fósforo CRT.
-const BASE_ALPHA = 0.45;
+// sector. Densos cerca del barrido (donde la transición es más visible al
+// ojo) y más espaciados detrás. El salto entre niveles consecutivos es
+// chico (≤10%) para que la degradación se perciba como un gradiente suave
+// en lugar de "anillos" o "líneas de corte".
+const BASE_ALPHA = 0.55;
 const GLOW_STEPS: { degHasta: number; alpha: number }[] = [
-  { degHasta: 30, alpha: 1.0 },
-  { degHasta: 90, alpha: 0.85 },
-  { degHasta: 180, alpha: 0.7 },
-  { degHasta: 270, alpha: 0.55 },
+  { degHasta: 10,  alpha: 1.00 },
+  { degHasta: 25,  alpha: 0.95 },
+  { degHasta: 45,  alpha: 0.88 },
+  { degHasta: 70,  alpha: 0.82 },
+  { degHasta: 100, alpha: 0.76 },
+  { degHasta: 140, alpha: 0.70 },
+  { degHasta: 190, alpha: 0.65 },
+  { degHasta: 250, alpha: 0.60 },
 ];
 
 export class PPI {
