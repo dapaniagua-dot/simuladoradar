@@ -16,6 +16,20 @@ Después arrancamos **MVP 4: PPI del radar** (traducción de los `.pas` de Pasca
 
 ---
 
+## 🎬 Replay de ejercicios (MVP 6.4 diferido)
+
+**Estado**: agendado el 2026-04-29.
+**Origen**: Diego pidió Replay como must-have del MVP 6 desde el principio. Implementarlo bien requiere:
+
+1. **Persistir cada tick** (o un subset cada N ticks) a una tabla `replays`/`replay_frames` en Postgres durante una sesión activa.
+2. **Página `/replay.html?sesion=X`** que reproduce los frames con controles de play/pause/seek/speed.
+3. **Render** equivalente al aula del alumno + radar PPI sobre los datos grabados.
+4. **Limpieza/retención** de replays antiguos para no llenar la BD.
+
+**Por qué no es ahora**: trabajo aparte (~1 semana). El MVP funcional para dar un curso ya cierra con VHF + Navtex + DMs (MVP 6.1-6.3). El profesor puede grabar manualmente con OBS o Loom mientras dictamos los primeros cursos, y agregamos replay nativo después.
+
+---
+
 ## 📡 Afterglow del PPI con gradiente continuo (cosmético)
 
 **Estado**: agendado el 2026-04-29.
