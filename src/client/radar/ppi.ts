@@ -57,6 +57,12 @@ export class PPI {
   private prevEscalaNm: number | null = null;
   private prevMode: PPIMode | null = null;
 
+  // Residuo de offset que no llegó a 1 píxel entero. Se acumula entre frames
+  // para que a velocidades bajas el desplazamiento se aplique cuando sea
+  // visible (sin blur subpixel por interpolación bilinear).
+  private residuoOffsetX = 0;
+  private residuoOffsetY = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.mainCanvas = canvas;
     const main = canvas.getContext('2d');
@@ -96,6 +102,8 @@ export class PPI {
     this.echoesCtx.clearRect(0, 0, this.size, this.size);
     this.prevLat = null;
     this.prevLon = null;
+    this.residuoOffsetX = 0;
+    this.residuoOffsetY = 0;
   }
 
   // Dibuja el PPI completo. Llamar a 60 fps para barrido suave.
@@ -138,25 +146,34 @@ export class PPI {
     // ---------- 1a) Compensar el desplazamiento del barco ----------
     // Si el barco se mueve, los ecos viejos en el canvas deben "viajar hacia
     // atrás" relativo al barco para mantenerse anclados a su posición geográfica.
-    // Trasladamos el contenido del canvas con drawImage sobre sí mismo.
+    //
+    // Cuidado: a velocidades bajas el delta por frame es subpíxel (~0.002 px
+    // a 18 kn / range 12 NM / 60 fps). Si llamamos drawImage con un offset
+    // fraccionario, el browser interpola bilinear → cada frame agrega un
+    // blur ínfimo, que ACUMULADO sobre cientos de frames vuelve los ecos
+    // gruesos y borrosos. Lo evitamos:
+    //   1) imageSmoothingEnabled=false → nearest-neighbor.
+    //   2) Acumulamos un residuo entre frames y solo aplicamos drawImage
+    //      cuando el offset entero sea >= 1 px en alguna dirección.
     if (ownShip && this.prevLat !== null && this.prevLon !== null) {
       const dN_millas = (ownShip.lat - this.prevLat) * MILLAS_POR_GRADO_LAT;
       const cosLat = Math.cos((ownShip.lat * Math.PI) / 180);
       const dE_millas = (ownShip.lon - this.prevLon) * cosLat * MILLAS_POR_GRADO_LAT;
-      const offsetX = -dE_millas * pixelsPorMilla;
-      const offsetY = dN_millas * pixelsPorMilla;
-      if (Math.abs(offsetX) > 0.01 || Math.abs(offsetY) > 0.01) {
-        // drawImage del canvas sobre sí mismo, desplazado. Para evitar que el
-        // browser lea y escriba al mismo buffer (resultado indefinido en algunos
-        // navegadores), copiamos a un canvas temporal primero. Pero en la
-        // práctica, drawImage de un canvas sobre sí mismo está soportado.
+      this.residuoOffsetX += -dE_millas * pixelsPorMilla;
+      this.residuoOffsetY += dN_millas * pixelsPorMilla;
+      const offsetIntX = this.residuoOffsetX >= 0 ? Math.floor(this.residuoOffsetX) : Math.ceil(this.residuoOffsetX);
+      const offsetIntY = this.residuoOffsetY >= 0 ? Math.floor(this.residuoOffsetY) : Math.ceil(this.residuoOffsetY);
+      if (offsetIntX !== 0 || offsetIntY !== 0) {
         const ctx = this.echoesCtx;
         ctx.save();
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        ctx.imageSmoothingEnabled = false;
         ctx.globalCompositeOperation = 'copy';
-        ctx.drawImage(this.echoesCanvas, offsetX, offsetY, cssSize, cssSize);
+        ctx.drawImage(this.echoesCanvas, offsetIntX, offsetIntY, cssSize, cssSize);
         ctx.globalCompositeOperation = 'source-over';
         ctx.restore();
+        this.residuoOffsetX -= offsetIntX;
+        this.residuoOffsetY -= offsetIntY;
       }
     }
     if (ownShip) {
