@@ -58,8 +58,28 @@
       </section>
 
       <section class="panel">
+        <h3 class="panel-titulo">EBL <span class="panel-hint">(Electronic Bearing Line)</span></h3>
+        <button type="button" id="btnEbl" class="btn-sm btn-toggle">EBL OFF</button>
+        <div id="eblControls" hidden>
+          <div class="panel-row">
+            <label>Bearing</label>
+            <span class="display-7seg-sm" id="eblBearingDisplay">000.0°</span>
+          </div>
+          <div class="ebl-input-row">
+            <input type="number" id="eblBearingInput" min="0" max="359.9" step="0.1" value="0" />
+            <span>°</span>
+          </div>
+          <div class="mode-buttons">
+            <button type="button" id="eblModeTrue" class="btn-sm active">TRUE</button>
+            <button type="button" id="eblModeRelative" class="btn-sm">RELATIVE</button>
+          </div>
+          <p class="placeholder ebl-tip">Tip: con EBL activo, click en el PPI para apuntar.</p>
+        </div>
+      </section>
+
+      <section class="panel">
         <h3 class="panel-titulo">PRÓXIMAS FUNCIONES</h3>
-        <p class="placeholder">EBL, VRM, ARPA y ecos del entorno se incorporan en los siguientes sub-MVPs (4.2 a 4.9).</p>
+        <p class="placeholder">VRM y ARPA en los siguientes sub-MVPs (4.8 y 4.9).</p>
       </section>
     </aside>
   </main>

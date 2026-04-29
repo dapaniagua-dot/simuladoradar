@@ -21,6 +21,10 @@ export type EscalaNm = (typeof ESCALAS_NM)[number];
 export interface PPIConfig {
   escalaNm: EscalaNm;
   mode: PPIMode;
+  eblActive: boolean;
+  // Bearing del EBL almacenado siempre en TRUE (0..360°, desde norte).
+  // La conversión a/desde RELATIVE la hace el cliente.
+  eblBearingTrue: number;
 }
 
 // Velocidad de barrido. Un radar náutico real gira a 24 RPM (1 vuelta cada
@@ -161,11 +165,14 @@ export class PPI {
       }
     }
 
-    // Anillos / bearings / heading line / antena
+    // Anillos / bearings / heading line / antena / EBL
     this.dibujarAnillos(ctx, radius, config.escalaNm);
     this.dibujarBearings(ctx, radius);
     this.dibujarHeadingLine(ctx, radius, ownShip, config.mode);
     this.dibujarAntena(ctx, radius, antennaAngle);
+    if (config.eblActive) {
+      this.dibujarEBL(ctx, radius, config.eblBearingTrue);
+    }
 
     ctx.restore();
 
@@ -290,6 +297,26 @@ export class PPI {
     ctx.moveTo(0, 0);
     ctx.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
     ctx.stroke();
+  }
+
+  // Línea de marcación electrónica. El bearing se mide desde el norte verdadero
+  // (TRUE). Se dibuja DENTRO del scope rotado (translate al centro + rotate
+  // del modo Head Up si aplica), así que dibujar al ángulo bearing_true en el
+  // canvas funciona en ambos modos: en North Up apunta al bearing absoluto;
+  // en Head Up el rotate inverso lo coloca correctamente.
+  private dibujarEBL(ctx: CanvasRenderingContext2D, radius: number, bearingTrue: number): void {
+    ctx.save();
+    // -90° para que el ángulo 0 quede arriba (norte). Sentido horario.
+    ctx.rotate(((bearingTrue - 90) * Math.PI) / 180);
+    ctx.strokeStyle = 'rgba(120, 230, 255, 0.85)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(radius, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   private dibujarEscala(ctx: CanvasRenderingContext2D, size: number, config: PPIConfig): void {
