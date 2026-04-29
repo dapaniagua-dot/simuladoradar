@@ -79,6 +79,15 @@ export class PPI {
     this.echoesCanvas.height = pxSize;
   }
 
+  // Borra todo el canvas de ecos persistentes. Llamar cuando cambia algo que
+  // invalida los ecos viejos: cambio de RANGE (otra escala), cambio de MODE
+  // (otra rotación), o reset manual.
+  clearEchoes(): void {
+    this.echoesCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.echoesCtx.globalCompositeOperation = 'source-over';
+    this.echoesCtx.clearRect(0, 0, this.size, this.size);
+  }
+
   // Dibuja el PPI completo. Llamar a 60 fps para barrido suave.
   draw(
     ownShip: EstadoBuqueDTO | null,

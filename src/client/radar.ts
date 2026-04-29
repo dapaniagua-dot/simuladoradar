@@ -97,7 +97,11 @@ function construirControlesEscala(): void {
     btn.dataset.value = String(escala);
     if (escala === config.escalaNm) btn.classList.add('active');
     btn.addEventListener('click', () => {
+      if (config.escalaNm === escala) return;
       config.escalaNm = escala;
+      // Los ecos viejos están dibujados a la escala anterior; los borramos
+      // para que solo se vean los nuevos a la nueva escala.
+      ppi?.clearEchoes();
       [...rangeGrid.querySelectorAll('.range-btn')].forEach((b) =>
         b.classList.toggle('active', (b as HTMLElement).dataset.value === String(escala)),
       );
@@ -108,12 +112,16 @@ function construirControlesEscala(): void {
 
 function cablearControles(): void {
   modeNorthBtn.addEventListener('click', () => {
+    if (config.mode === 'NORTH_UP') return;
     config.mode = 'NORTH_UP';
+    ppi?.clearEchoes();
     modeNorthBtn.classList.add('active');
     modeHeadBtn.classList.remove('active');
   });
   modeHeadBtn.addEventListener('click', () => {
+    if (config.mode === 'HEAD_UP') return;
     config.mode = 'HEAD_UP';
+    ppi?.clearEchoes();
     modeHeadBtn.classList.add('active');
     modeNorthBtn.classList.remove('active');
   });
