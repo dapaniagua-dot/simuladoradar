@@ -169,6 +169,18 @@ La consola es un "escenario" fijo de 1025×785 px (el tamaño de la pantalla ori
 
 ---
 
+## D16. Radar con el aspecto del radar del Melipal
+
+**Decidido (2026-09-23, pedido de Diego):** la pantalla del radar replica la del `SRadar.exe` del Melipal: PPI azul oscuro con ecos amarillos, anillos blancos, bisel negro con escala de marcaciones, textos en las esquinas (HEADING / SPEED / RANGE / RINGS / MARKER INFO / OWN SHIP), controles GAIN/TUNE/SEA/RAIN y el panel derecho de 260 px con los mismos botones y pestañas.
+
+**Cómo:** a diferencia de la consola (D14), el radar original **no tiene gráficos**: son controles Delphi estándar (se verificó extrayendo el formulario `TFPRINCIPAL` del .exe). Se reprodujo con CSS/canvas tomando como referencia la captura del manual (`docs/referencia/melipal-radar.png`), con colores medidos sobre ella.
+
+**Qué funciona:** RANGE ±, NORTH/COURSE/HEAD UP, EBL 1-2 y VRM 1-2 (arrastrando sobre el PPI o con −/+), RINGS, HEAD/STERN MARKER, BEARING SCALE, SWEEP LINE, NIGHT COLORS, ARPA (adquisición y cese manual, vector verdadero/relativo, longitud de vector, límites de CPA/TCPA, datos de 2 blancos), alarmas COLLISION WARNING / NEW TARGET / LOST TARGET, STAND BY / TRANSMIT, GAIN, TUNE, SEA y AUTO CLUTTER (hay clutter de mar simulado alrededor del buque propio).
+
+**Qué se ve pero no hace nada todavía:** TRUE MOTION, CENTRE, OWN HISTORY, RADAR ONLY, AUTO ACQUIRE, GROUND STAB, INTERF REJECTION, RAIN, y las pestañas Navigation, Trial Maneuver, Track Zone, Map, Parallel Index y Reference Position.
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.

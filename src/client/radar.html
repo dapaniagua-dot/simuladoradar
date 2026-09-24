@@ -6,6 +6,13 @@
   <title>Radar PPI — Simulador</title>
   <link rel="stylesheet" href="/styles/global.css" />
 </head>
+<!--
+  Réplica de la pantalla del radar del Melipal (SRadar.exe). El original no
+  usa gráficos: son controles Delphi sobre fondo azul pizarra, así que se
+  reproduce con CSS tomando como referencia docs/referencia/melipal-radar.png.
+  Los botones que el original tiene pero todavía no simulamos quedan
+  deshabilitados (se ven, pero no hacen nada).
+-->
 <body class="radar-body">
   <header class="topbar topbar-compact">
     <h1>RADAR PPI <span id="ownshipBadge" class="badge">—</span></h1>
@@ -16,93 +23,250 @@
   </header>
 
   <main class="radar-main">
-    <!-- Pantalla del PPI (lado izquierdo, ocupa la mayor parte) -->
+    <!-- PPI + textos superpuestos en las esquinas -->
     <section class="radar-pantalla">
       <div id="loadingMsg" class="placeholder radar-loading">Conectando al radar...</div>
       <canvas id="ppiCanvas" hidden></canvas>
+
+      <div class="hud hud-sup-izq">
+        <div class="hud-bloque">
+          <div>HEADING <span class="hud-verde">gyro</span></div>
+          <div class="hud-valor" id="hudHeading">—</div>
+          <div>degrees</div>
+        </div>
+        <div class="hud-bloque">
+          <div>SPEED <span class="hud-verde">log</span></div>
+          <div class="hud-valor" id="hudSpeed">—</div>
+          <div>knots</div>
+        </div>
+      </div>
+
+      <div class="hud hud-sup-der">
+        <div class="hud-modos hud-verde">
+          <div>RELATIVE MOTION</div>
+          <div id="hudModo">NORTH UP</div>
+          <div>TRUE SCALE</div>
+        </div>
+        <div class="hud-bloques-der">
+          <div class="hud-bloque">
+            <div>RANGE</div>
+            <div class="hud-valor" id="hudRange">6</div>
+            <div>n mile</div>
+          </div>
+          <div class="hud-bloque">
+            <div>RINGS</div>
+            <div class="hud-valor" id="hudRings">1</div>
+            <div>n mile</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hud hud-inf-izq">
+        <div class="hud-titulo">MARKER INFO.</div>
+        <div>RANGE: <span class="hud-verde" id="hudMarkerRange">—</span> n mile</div>
+        <div>BEARING: <span class="hud-verde" id="hudMarkerBearing">—</span> degrees</div>
+        <div class="hud-sep">LAT: <span class="hud-verde" id="hudMarkerLat">—</span></div>
+        <div>LONG: <span class="hud-verde" id="hudMarkerLon">—</span></div>
+        <div class="hud-sliders">
+          <label>GAIN <input type="range" id="sliderGain" min="0" max="100" value="75" /> <span id="valGain">75</span></label>
+          <label>TUNE <input type="range" id="sliderTune" min="0" max="100" value="76" /> <span id="valTune">76</span></label>
+        </div>
+      </div>
+
+      <div class="hud hud-inf-der">
+        <div class="hud-titulo">OWN SHIP</div>
+        <div>COURSE: <span class="hud-verde" id="hudCourse">—</span> degrees</div>
+        <div>SPEED: <span class="hud-verde" id="hudOwnSpeed">—</span> knots</div>
+        <div class="hud-sep">GPS</div>
+        <div>LAT: <span class="hud-verde" id="hudLat">—</span></div>
+        <div>LONG: <span class="hud-verde" id="hudLon">—</span></div>
+        <div class="hud-sliders">
+          <label>SEA <input type="range" id="sliderSea" min="0" max="100" value="50" /> <span id="valSea">50</span></label>
+          <label>RAIN <input type="range" id="sliderRain" min="0" max="100" value="0" /> <span id="valRain">0</span></label>
+        </div>
+      </div>
     </section>
 
-    <!-- Panel de control del radar (lado derecho) -->
-    <aside class="radar-controles">
-      <section class="panel">
-        <h3 class="panel-titulo">RANGE</h3>
-        <div class="range-grid" id="rangeGrid"></div>
-      </section>
+    <!-- Panel de control (lado derecho, 260 px como el original) -->
+    <aside class="radar-controles" id="radarControles">
+      <div class="rp-alarmas">
+        <button type="button" class="rb rb-alarma" id="alarmaColision">COLLISION<br />WARNING</button>
+        <button type="button" class="rb rb-alarma" id="alarmaSistema">SYSTEM<br />ALARM</button>
+        <button type="button" class="rb rb-alarma" id="alarmaNuevo">NEW<br />TARGET</button>
+        <button type="button" class="rb rb-alarma" id="alarmaPerdido">LOST<br />TARGET</button>
+      </div>
 
-      <section class="panel">
-        <h3 class="panel-titulo">MODE</h3>
-        <div class="mode-buttons">
-          <button type="button" id="modeNorth" class="btn-sm active">North Up</button>
-          <button type="button" id="modeHead" class="btn-sm">Head Up</button>
+      <div class="rp-grupo rp-range">
+        <div class="rp-range-caja">
+          <div class="rp-range-titulo">RANGE</div>
+          <div class="rp-range-fila">
+            <div class="rp-7seg" id="rangeDisplay">6</div>
+            <div class="rp-masmenos">
+              <button type="button" class="rb rb-chico" id="rangeMas" title="Aumentar escala">+</button>
+              <button type="button" class="rb rb-chico" id="rangeMenos" title="Reducir escala">-</button>
+            </div>
+          </div>
         </div>
-      </section>
+        <div class="rp-botonera3">
+          <button type="button" class="rb" aria-pressed="true" title="Movimiento relativo (único modo disponible)">RELATIVE<br />MOTION</button>
+          <button type="button" class="rb" disabled title="No disponible en la versión web">TRUE<br />MOTION</button>
+          <button type="button" class="rb" disabled title="No disponible en la versión web">CENTRE</button>
+          <button type="button" class="rb rb-modo" data-modo="NORTH_UP" aria-pressed="true">NORTH<br />UP</button>
+          <button type="button" class="rb rb-modo" data-modo="COURSE_UP" aria-pressed="false">COURSE<br />UP</button>
+          <button type="button" class="rb rb-modo" data-modo="HEAD_UP" aria-pressed="false">HEAD<br />UP</button>
+        </div>
+      </div>
 
-      <section class="panel">
-        <h3 class="panel-titulo">STATUS</h3>
-        <div class="panel-row">
-          <label>Heading</label>
-          <span class="display-7seg-sm" id="hdgVal">—</span>
+      <div class="rp-grupo rp-eblvrm">
+        <div class="rp-marca" data-tipo="ebl" data-i="0">
+          <button type="button" class="rb" aria-pressed="false">EBL 1</button>
+          <div class="rp-marca-valor" hidden>
+            <small>True / Rel.</small><span class="rp-verde"></span>
+            <span class="rp-masmenos-h"><button type="button" class="rb rb-chico" data-paso="-1">-</button><button type="button" class="rb rb-chico" data-paso="1">+</button></span>
+          </div>
         </div>
-        <div class="panel-row">
-          <label>Speed</label>
-          <span class="display-7seg-sm" id="spdVal">—</span>
+        <div class="rp-marca" data-tipo="ebl" data-i="1">
+          <button type="button" class="rb" aria-pressed="false">EBL 2</button>
+          <div class="rp-marca-valor" hidden>
+            <small>True / Rel.</small><span class="rp-verde"></span>
+            <span class="rp-masmenos-h"><button type="button" class="rb rb-chico" data-paso="-1">-</button><button type="button" class="rb rb-chico" data-paso="1">+</button></span>
+          </div>
         </div>
-        <div class="panel-row">
-          <label>Position</label>
-          <span class="display-7seg-sm" id="posLatVal">—</span>
+        <div class="rp-marca" data-tipo="vrm" data-i="0">
+          <button type="button" class="rb" aria-pressed="false">VRM 1</button>
+          <div class="rp-marca-valor" hidden>
+            <small>n mile</small><span class="rp-verde"></span>
+            <span class="rp-masmenos-h"><button type="button" class="rb rb-chico" data-paso="-1">-</button><button type="button" class="rb rb-chico" data-paso="1">+</button></span>
+          </div>
         </div>
-        <div class="panel-row">
-          <label></label>
-          <span class="display-7seg-sm" id="posLonVal">—</span>
+        <div class="rp-marca" data-tipo="vrm" data-i="1">
+          <button type="button" class="rb" aria-pressed="false">VRM 2</button>
+          <div class="rp-marca-valor" hidden>
+            <small>n mile</small><span class="rp-verde"></span>
+            <span class="rp-masmenos-h"><button type="button" class="rb rb-chico" data-paso="-1">-</button><button type="button" class="rb rb-chico" data-paso="1">+</button></span>
+          </div>
         </div>
-      </section>
+        <p class="rp-ayuda">Con una EBL/VRM encendida, arrastrá sobre el PPI para moverla.</p>
+      </div>
 
-      <section class="panel">
-        <h3 class="panel-titulo">EBL <span class="panel-hint">(Electronic Bearing Line)</span></h3>
-        <button type="button" id="btnEbl" class="btn-sm btn-toggle">EBL OFF</button>
-        <div id="eblControls" hidden>
-          <div class="panel-row">
-            <label>Bearing</label>
-            <span class="display-7seg-sm" id="eblBearingDisplay">000.0°</span>
-          </div>
-          <div class="ebl-input-row">
-            <input type="number" id="eblBearingInput" min="0" max="359.9" step="0.1" value="0" />
-            <span>°</span>
-          </div>
-          <div class="mode-buttons">
-            <button type="button" id="eblModeTrue" class="btn-sm active">TRUE</button>
-            <button type="button" id="eblModeRelative" class="btn-sm">RELATIVE</button>
-          </div>
-          <p class="placeholder ebl-tip">Tip: con EBL activo, click en el PPI para apuntar.</p>
+      <!-- Pestañas superiores: Display / Radar Info / Navigation / Trial Maneuver -->
+      <div class="rp-tabs" data-grupo="sup">
+        <div class="rp-tabs-fila">
+          <button type="button" class="rp-tab" data-tab="navegacion">Navigation</button>
+          <button type="button" class="rp-tab" data-tab="trial">Trial Maneuver</button>
         </div>
-      </section>
+        <div class="rp-tabs-fila">
+          <button type="button" class="rp-tab" data-tab="display" aria-selected="true">Display</button>
+          <button type="button" class="rp-tab" data-tab="info">Radar Info</button>
+        </div>
+        <div class="rp-tab-pagina" data-tab="display">
+          <div class="rp-botonera4">
+            <button type="button" class="rb" disabled title="No disponible en la versión web">OWN<br />HISTORY</button>
+            <button type="button" class="rb rb-toggle" data-opcion="anillos" aria-pressed="true">RINGS</button>
+            <button type="button" class="rb rb-toggle" data-opcion="marcaProa" aria-pressed="true">HEAD<br />MARKER</button>
+            <button type="button" class="rb rb-toggle" data-opcion="escalaMarcaciones" aria-pressed="true">BEARING<br />SCALE</button>
+            <button type="button" class="rb" disabled title="No disponible en la versión web">CLEAR</button>
+            <button type="button" class="rb" disabled title="No disponible en la versión web">RADAR<br />ONLY</button>
+            <button type="button" class="rb rb-toggle" data-opcion="marcaPopa" aria-pressed="false">STERN<br />MARKER</button>
+            <button type="button" class="rb" aria-pressed="true" title="Escala de marcaciones verdadera">TRUE<br />SCALE</button>
+            <span></span>
+            <button type="button" class="rb rb-toggle" data-opcion="colorNoche" aria-pressed="false">NIGHT<br />COLORS</button>
+            <button type="button" class="rb rb-toggle" data-opcion="lineaBarrido" aria-pressed="true">SWEEP<br />LINE</button>
+            <button type="button" class="rb" disabled>RELATIVE<br />SCALE</button>
+          </div>
+        </div>
+        <div class="rp-tab-pagina" data-tab="info" hidden>
+          <div class="rp-info">
+            <div>Main, <span class="rp-verde">X</span> band</div>
+            <div>SCAN RATE <span class="rp-verde">12</span> RPM</div>
+            <div>PRF <span class="rp-verde">1000</span> Hz</div>
+            <div>POWER <span class="rp-verde">10</span> KW</div>
+            <div>PULSE <span class="rp-verde">SHORT</span></div>
+            <div>HEADING <span class="rp-verde">GYRO</span> · SPEED <span class="rp-verde">LOG</span></div>
+          </div>
+        </div>
+        <div class="rp-tab-pagina" data-tab="navegacion" hidden>
+          <p class="rp-ayuda">Navegación (GPS / Fixed target / Dead reckoning): todavía no disponible en la versión web.</p>
+        </div>
+        <div class="rp-tab-pagina" data-tab="trial" hidden>
+          <p class="rp-ayuda">Trial maneuver: todavía no disponible en la versión web.</p>
+        </div>
+      </div>
 
-      <section class="panel">
-        <h3 class="panel-titulo">VRM <span class="panel-hint">(Variable Range Marker)</span></h3>
-        <button type="button" id="btnVrm" class="btn-sm btn-toggle">VRM OFF</button>
-        <div id="vrmControls" hidden>
-          <div class="panel-row">
-            <label>Range</label>
-            <span class="display-7seg-sm" id="vrmRangeDisplay">0.00 nm</span>
-          </div>
-          <div class="ebl-input-row">
-            <input type="number" id="vrmRangeInput" min="0.01" max="48" step="0.01" value="1" />
-            <span>nm</span>
-          </div>
-          <p class="placeholder ebl-tip">Tip: con VRM activo, click en el PPI para ajustar el radio.</p>
+      <!-- Pestañas inferiores: Arpa / Track Zone / Map / Parallel Index / Reference -->
+      <div class="rp-tabs" data-grupo="inf">
+        <div class="rp-tabs-fila">
+          <button type="button" class="rp-tab" data-tab="paralelas">Parallel Index</button>
+          <button type="button" class="rp-tab" data-tab="referencia">Reference Position</button>
         </div>
-      </section>
+        <div class="rp-tabs-fila">
+          <button type="button" class="rp-tab" data-tab="arpa" aria-selected="true">Arpa</button>
+          <button type="button" class="rp-tab" data-tab="zona">Track Zone</button>
+          <button type="button" class="rp-tab" data-tab="mapa">Map</button>
+        </div>
+        <div class="rp-tab-pagina" data-tab="arpa">
+          <div class="rp-botonera4">
+            <button type="button" class="rb" id="btnAcquire" aria-pressed="false" title="Adquirir: después hacé click sobre un eco">MANUAL<br />ACQUIRE</button>
+            <button type="button" class="rb rb-vector" data-vector="RELATIVE" aria-pressed="false">RELATIVE<br />VECTOR</button>
+            <button type="button" class="rb" disabled>GROUND<br />STAB</button>
+            <button type="button" class="rb rb-toggle" data-opcion="arpaVisible" aria-pressed="true">ARPA</button>
+            <button type="button" class="rb" disabled title="No disponible en la versión web">AUTO<br />ACQUIRE</button>
+            <button type="button" class="rb rb-vector" data-vector="TRUE" aria-pressed="true">TRUE<br />VECTOR</button>
+            <button type="button" class="rb" aria-pressed="true" title="Estabilización al agua">SEA<br />STAB</button>
+            <button type="button" class="rb" id="btnCease" aria-pressed="false" title="Dejar de seguir: después hacé click sobre el blanco">CEASE<br />TRACK</button>
+          </div>
+        </div>
+        <div class="rp-tab-pagina" data-tab="zona" hidden><p class="rp-ayuda">Track zone: todavía no disponible en la versión web.</p></div>
+        <div class="rp-tab-pagina" data-tab="mapa" hidden><p class="rp-ayuda">Mapas de radar: todavía no disponible en la versión web.</p></div>
+        <div class="rp-tab-pagina" data-tab="paralelas" hidden><p class="rp-ayuda">Parallel index: todavía no disponible en la versión web.</p></div>
+        <div class="rp-tab-pagina" data-tab="referencia" hidden><p class="rp-ayuda">Reference position: todavía no disponible en la versión web.</p></div>
+      </div>
 
-      <section class="panel">
-        <h3 class="panel-titulo">ARPA <span class="panel-hint">(Plotting Aid)</span></h3>
-        <div class="arpa-actions">
-          <button type="button" id="btnArpaAcquire" class="btn-sm">ACQUIRE</button>
-          <button type="button" id="btnArpaCeaseAll" class="btn-sm">CEASE ALL</button>
+      <!-- Datos de los dos blancos ARPA -->
+      <div class="rp-grupo rp-blancos">
+        <div class="rp-blancos-cab">
+          <button type="button" class="rb rb-toggle" data-opcion="mostrarLimiteCpa" aria-pressed="false">CPA<br />Limit</button>
+          <div>TARGET <span class="rp-verde" id="blanco0Id">—</span></div>
+          <div>TARGET <span class="rp-verde" id="blanco1Id">—</span></div>
         </div>
-        <div id="arpaList" class="arpa-list">
-          <p class="placeholder ebl-tip">Sin blancos. Click ACQUIRE y después click sobre un eco rojo del PPI.</p>
+        <table class="rp-tabla">
+          <tbody>
+            <tr><th></th><td id="b0Lat">—</td><td id="b1Lat">—</td></tr>
+            <tr><th></th><td id="b0Lon">—</td><td id="b1Lon">—</td></tr>
+            <tr><th>BEARING</th><td id="b0Brg">—</td><td id="b1Brg">—</td></tr>
+            <tr><th>RANGE</th><td id="b0Rng">—</td><td id="b1Rng">—</td></tr>
+            <tr><th>COURSE</th><td id="b0Crs">—</td><td id="b1Crs">—</td></tr>
+            <tr><th>SPEED</th><td id="b0Spd">—</td><td id="b1Spd">—</td></tr>
+            <tr><th>CPA</th><td id="b0Cpa">—</td><td id="b1Cpa">—</td></tr>
+            <tr><th>TCPA</th><td id="b0Tcpa">—</td><td id="b1Tcpa">—</td></tr>
+            <tr class="rp-aviso"><th></th><td id="b0Aviso"></td><td id="b1Aviso"></td></tr>
+          </tbody>
+        </table>
+        <div class="rp-limites">
+          <div class="rp-limite" data-limite="vectorMin">
+            <div>Vector Length</div>
+            <div><button type="button" class="rb rb-chico" data-paso="-1">-</button><span class="rp-verde"></span><button type="button" class="rb rb-chico" data-paso="1">+</button></div>
+            <div>min</div>
+          </div>
+          <div class="rp-limite" data-limite="cpaLimiteNm">
+            <div>CPA Limit</div>
+            <div><button type="button" class="rb rb-chico" data-paso="-1">-</button><span class="rp-verde"></span><button type="button" class="rb rb-chico" data-paso="1">+</button></div>
+            <div>n mile</div>
+          </div>
+          <div class="rp-limite" data-limite="tcpaLimiteMin">
+            <div>TCPA Limit</div>
+            <div><button type="button" class="rb rb-chico" data-paso="-1">-</button><span class="rp-verde"></span><button type="button" class="rb rb-chico" data-paso="1">+</button></div>
+            <div>min</div>
+          </div>
         </div>
-      </section>
+      </div>
+
+      <div class="rp-abajo">
+        <button type="button" class="rb rb-toggle" data-opcion="autoClutter" aria-pressed="false">AUTO<br />CLUTTER</button>
+        <button type="button" class="rb" id="btnInterf" aria-pressed="false">INTERF<br />REJECTION</button>
+        <button type="button" class="rb" id="btnStandby" aria-pressed="false">STAND<br />BY</button>
+        <button type="button" class="rb" id="btnTransmit" aria-pressed="true">TRANSMIT</button>
+      </div>
     </aside>
   </main>
 

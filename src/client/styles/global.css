@@ -549,6 +549,9 @@ td a:hover { text-decoration: underline; }
 .telegrafo-mount { position: relative; width: 290px; height: 290px; }
 .telegrafo { display: flex; }
 .telegrafo img { display: block; height: 290px; touch-action: none; }
+/* Al escalar la consola a tamaños no enteros aparecen rayitas entre las tres
+   imágenes; solaparlas 1 px las tapa. */
+.telegrafo img + img { margin-left: -1px; }
 .telegrafo-palanca { cursor: ns-resize; }
 .telegrafo-palanca:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .telegrafo-escala { cursor: pointer; }
@@ -569,107 +572,167 @@ td a:hover { text-decoration: underline; }
 }
 
 /* ============================================================
-   Radar PPI: ventana independiente
+   Radar PPI: réplica de la pantalla del Melipal (SRadar.exe).
+   Colores medidos sobre docs/referencia/melipal-radar.png.
    ============================================================ */
-.radar-body { background: #000; overflow: hidden; height: 100vh; }
+.radar-body {
+  --rp-fondo: #636c93;
+  --rp-linea: #ffffff;
+  --rp-activo: #a3a4dc;
+  --rp-verde: #5cff5c;
+  --rp-tab: #c0c0c0;
+  background: var(--rp-fondo);
+  overflow: hidden;
+  height: 100vh;
+  font-family: Tahoma, Verdana, "Segoe UI", sans-serif;
+}
 .topbar-compact { padding: 6px 16px; background: #0b1620; }
 .topbar-compact h1 { font-size: 14px; }
 .radar-main {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: 1fr 260px;
   height: calc(100vh - 44px);
-  background: #000;
 }
 .radar-pantalla {
-  background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   position: relative;
   overflow: hidden;
+  background: var(--rp-fondo);
+  color: #fff;
+  /* Los textos de las esquinas se achican con el tamaño del panel. */
+  container-type: size;
 }
-.radar-pantalla canvas { display: block; }
-.radar-loading { color: rgba(0, 220, 100, 0.6); }
-/* Radar embebido en el aula: sin barra superior, y con el panel de
-   controles más angosto cuando el panel del aula es chico (este media
-   query mide el iframe, no la ventana del navegador). */
-.radar-body.embebido .topbar { display: none; }
-.radar-body.embebido .radar-main { height: 100vh; }
-@media (max-width: 760px) {
-  .radar-body.embebido .radar-main { grid-template-columns: 1fr 200px; }
-  .radar-body.embebido .radar-controles { padding: 6px; gap: 6px; }
+.radar-pantalla canvas { display: block; position: absolute; inset: 0; }
+.radar-loading { color: #fff; padding: 16px; }
+
+/* Textos superpuestos al PPI */
+.hud {
+  position: absolute;
+  font-size: clamp(9px, 1.9cqmin, 14px);
+  line-height: 1.25;
+  pointer-events: none;
+  text-shadow: 0 0 2px #3a4060;
 }
+.hud-sup-izq { top: 8px; left: 10px; display: flex; flex-direction: column; gap: 10px; }
+.hud-sup-der { top: 8px; right: 10px; display: flex; gap: 14px; }
+.hud-bloques-der { display: flex; flex-direction: column; gap: 10px; }
+.hud-inf-izq { bottom: 8px; left: 10px; }
+.hud-inf-der { bottom: 8px; right: 10px; text-align: right; }
+.hud-bloque { text-align: center; }
+.hud-bloque > div:first-child { font-size: 1.25em; }
+.hud-valor { color: var(--rp-verde); font-size: 1.2em; }
+.hud-verde { color: var(--rp-verde); }
+.hud-titulo { font-size: 1.15em; }
+.hud-sep { margin-top: 0.8em; }
+.hud-sliders { margin-top: 0.8em; display: flex; flex-direction: column; gap: 2px; pointer-events: auto; }
+.hud-sliders label { display: flex; align-items: center; gap: 6px; font-size: 1.1em; }
+.hud-sliders input[type="range"] { width: clamp(60px, 18cqw, 130px); accent-color: #dfdfdd; }
+.hud-sliders span { width: 2em; }
+.hud-inf-der .hud-sliders label { justify-content: flex-end; }
+
+/* Panel de control derecho */
 .radar-controles {
-  background: var(--bg-card);
-  border-left: 1px solid var(--border);
-  padding: 12px;
+  background: var(--rp-fondo);
+  border-left: 1px solid #4a5170;
+  color: #fff;
+  font-size: 11px;
+  padding: 6px 4px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 5px;
 }
-.range-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-}
-.range-btn { padding: 6px 4px; font-size: 12px; }
-.range-btn.active { background: var(--accent); color: #001b13; border-color: var(--accent); }
-.mode-buttons { display: flex; gap: 4px; }
-.mode-buttons .btn-sm { flex: 1; }
-.mode-buttons .btn-sm.active { background: var(--accent); color: #001b13; border-color: var(--accent); }
-
-.panel-hint { font-size: 10px; color: var(--muted); font-weight: normal; }
-.ebl-input-row { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
-.ebl-input-row input { flex: 1; padding: 4px 6px; font-size: 14px; }
-.ebl-tip { font-size: 10px; margin-top: 8px; }
-#eblControls { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-#eblControls .btn-sm { padding: 4px 8px; }
-
-.arpa-actions { display: flex; gap: 4px; margin-bottom: 8px; }
-.arpa-actions .btn-sm { flex: 1; }
-.arpa-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
-.arpa-row {
-  background: #061a25;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 8px;
-}
-.arpa-row.arpa-peligro {
-  border-color: var(--danger);
-  background: #2a1015;
-}
-.arpa-row-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-.arpa-row-head strong {
-  font-family: ui-monospace, monospace;
-  color: var(--accent);
-}
-.arpa-row.arpa-peligro .arpa-row-head strong { color: var(--danger); }
-.btn-cease {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-}
-.btn-cease:hover { background: var(--danger); color: #200; border-color: var(--danger); }
-.arpa-row-body {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2px 8px;
-  font-family: ui-monospace, monospace;
+.rb {
+  font: inherit;
   font-size: 11px;
-  color: var(--muted);
+  line-height: 1.15;
+  color: #fff;
+  background: var(--rp-fondo);
+  border: 1px solid var(--rp-linea);
+  border-radius: 0;
+  padding: 3px 2px;
+  min-height: 33px;
+  min-width: 0;
+  overflow: hidden;
+  cursor: pointer;
 }
+.rb:hover:not(:disabled) { filter: brightness(1.12); }
+.rb[aria-pressed="true"] { background: var(--rp-activo); }
+.rb:disabled { color: #9aa0bd; border-color: #9aa0bd; cursor: default; }
+.rb-chico { min-height: 0; width: 16px; padding: 0; line-height: 16px; }
+.rp-verde { color: var(--rp-verde); }
+.rp-ayuda { margin: 4px; font-size: 10px; color: #dfe2f2; }
+
+.rp-alarmas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 0 2px; }
+.rb-alarma { font-size: 10px; }
+.rb-alarma.encendida { background: #ff0000; color: #fff; }
+.rb-alarma.titila { animation: titilar 0.8s steps(1) infinite; }
+@keyframes titilar { 50% { background: var(--rp-fondo); } }
+
+.rp-grupo { border: 1px solid var(--rp-linea); padding: 5px; }
+.rp-range { display: flex; gap: 6px; }
+.rp-range-caja { border: 1px solid var(--rp-linea); padding: 3px 4px; flex-shrink: 0; }
+.rp-range-titulo { font-weight: bold; margin-bottom: 3px; }
+.rp-range-fila { display: flex; gap: 4px; align-items: center; }
+.rp-7seg {
+  background: #000;
+  color: var(--rp-verde);
+  font: 26px/1 "Melipal 7seg", ui-monospace, monospace;
+  min-width: 46px;
+  padding: 6px 4px;
+  text-align: center;
+  border: 2px inset #888;
+}
+.rp-masmenos { display: flex; flex-direction: column; gap: 4px; }
+.rp-botonera3 { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+
+.rp-botonera3 .rb { font-size: 10px; }
+.rp-eblvrm { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+.rp-marca { display: flex; gap: 4px; align-items: flex-start; }
+.rp-marca > .rb { width: 48px; flex-shrink: 0; }
+.rp-marca.seleccionada > .rb { outline: 2px solid var(--rp-verde); outline-offset: 1px; }
+.rp-marca-valor { display: flex; flex-direction: column; align-items: center; font-size: 10px; }
+.rp-marca-valor[hidden] { display: none; }
+.rp-masmenos-h { display: flex; gap: 3px; }
+.rp-eblvrm .rp-ayuda { grid-column: 1 / -1; margin: 0; }
+
+.rp-tabs { background: var(--rp-fondo); }
+.rp-tabs-fila { display: flex; }
+.rp-tab {
+  flex: 1;
+  font: inherit;
+  font-size: 11px;
+  color: #000;
+  background: var(--rp-tab);
+  border: 1px solid #808080;
+  border-bottom: 0;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.rp-tab[aria-selected="true"] { background: #dcdcdc; font-weight: bold; }
+.rp-tab-pagina { border: 1px solid var(--rp-linea); padding: 6px 4px; }
+.rp-tab-pagina[hidden] { display: none; }
+.rp-botonera4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.rp-info { display: flex; flex-direction: column; gap: 4px; padding: 2px 4px; }
+
+.rp-blancos-cab { display: grid; grid-template-columns: 50px 1fr 1fr; gap: 4px; align-items: center; text-align: center; }
+.rp-tabla { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 10.5px; }
+/* Anula el estilo de tablas del resto del sitio (bordes, relleno, gris). */
+.rp-tabla th, .rp-tabla td { border: 0; padding: 0 2px; background: none; }
+.rp-tabla th { text-align: left; font-weight: normal; width: 50px; color: #fff; text-transform: none; letter-spacing: 0; font-size: inherit; }
+.rp-tabla td { color: var(--rp-verde); text-align: right; white-space: nowrap; }
+.rp-aviso td { color: #fff; }
+.rp-aviso td:not(:empty) { background: #ff0000; text-align: center; }
+.rp-limites { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; text-align: center; }
+.rp-limite > div:nth-child(2) { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.rp-limite .rp-verde { min-width: 2em; }
+
+.rp-abajo { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: auto; }
+
+/* Radar embebido en el aula: sin barra superior. */
+.radar-body.embebido .topbar { display: none; }
+.radar-body.embebido .radar-main { height: 100vh; }
 
 /* ============================================================
    Comunicaciones (VHF / Navtex / DM) — MVP 6
