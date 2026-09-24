@@ -461,6 +461,14 @@ function conectarSocket(): void {
     connBadge.className = 'badge badge-abierta';
     publicarEstado();
   });
+  // "Lose ARPA Targets" del instructor: se sueltan todos los blancos.
+  socket.on('radar:perder-arpa', (m: { ownshipIndex: number }) => {
+    if (m.ownshipIndex !== miOwnshipIndex || arpa.todos().length === 0) return;
+    arpa.ceaseAll();
+    arpaTargets = [];
+    blancoPerdido = true;
+    publicarEstado();
+  });
   socket.on('radar:estado', (m: { ownshipIndex: number; estado: EstadoRadar }) => {
     if (observando && m.ownshipIndex === miOwnshipIndex) aplicarEstadoAlumno(m.estado);
   });
@@ -500,12 +508,20 @@ function conectarSocket(): void {
 function actualizarDatos(): void {
   const mio = miBuque();
   if (!mio) return;
-  el('hudHeading').textContent = mio.headingDeg.toFixed(1);
-  el('hudSpeed').textContent = mio.velocidadKn.toFixed(1);
-  el('hudCourse').textContent = mio.headingDeg.toFixed(1);
-  el('hudOwnSpeed').textContent = mio.velocidadKn.toFixed(1);
-  el('hudLat').textContent = formatDMS(mio.lat, true);
-  el('hudLon').textContent = formatDMS(mio.lon, false);
+  // Los datos del buque propio vienen de sus sensores: con el giro en falla el
+  // rumbo queda clavado; sin corredera no hay velocidad; sin GPS no hay posición.
+  const f = mio.fallas;
+  const rumbo = (f?.giro ? mio.giroCongeladoDeg : mio.headingDeg).toFixed(1);
+  const velocidad = f?.log ? '—' : mio.velocidadKn.toFixed(1);
+  el('hudHeading').textContent = rumbo;
+  el('hudSpeed').textContent = velocidad;
+  el('hudCourse').textContent = rumbo;
+  el('hudOwnSpeed').textContent = velocidad;
+  el('hudLat').textContent = f?.gps ? '—' : formatDMS(mio.lat, true);
+  el('hudLon').textContent = f?.gps ? '—' : formatDMS(mio.lon, false);
+  const hayFalla = !!f && (f.gps || f.giro || f.log || f.autopiloto || f.maquina || f.radar
+    || f.sectorCiegoDeg > 0 || f.ecoFalsoDeg !== null);
+  el('alarmaSistema').classList.toggle('encendida', hayFalla);
   actualizarValoresMarcas();
 
   // Tabla de blancos: los dos primeros seguidos.
@@ -540,6 +556,25 @@ function miBuque(): EstadoBuqueDTO | null {
   return ultimoTick.buques.find((b) => b.ownshipIndex === miOwnshipIndex) ?? null;
 }
 
+// Eco falso (indirecto): cada contacto aparece además en la marcación
+// relativa que fijó el instructor, a la misma distancia. Solo se dibuja; el
+// ARPA no lo puede adquirir.
+function ecosFalsos(): { lat: number; lon: number; headingDeg: number }[] {
+  const mio = miBuque();
+  const angulo = mio?.fallas?.ecoFalsoDeg;
+  if (!mio || angulo === null || angulo === undefined) return [];
+  const marcacion = ((mio.headingDeg + angulo) * Math.PI) / 180;
+  return contactos().map((c) => {
+    const rel = latLonAMillasRel(c.lat, c.lon, mio.lat, mio.lon);
+    const d = Math.hypot(rel.xE, rel.yN);
+    return {
+      lat: mio.lat + (Math.cos(marcacion) * d) / 60,
+      lon: mio.lon + (Math.sin(marcacion) * d) / (60 * Math.cos((mio.lat * Math.PI) / 180)),
+      headingDeg: c.headingDeg,
+    };
+  });
+}
+
 // Todo lo que el radar ve además del buque propio: los buques de los otros
 // alumnos y los blancos del instructor (DT y Targets).
 function contactos(): Contacto[] {
@@ -553,7 +588,12 @@ function contactos(): Contacto[] {
 }
 
 function loop(): void {
-  ppi?.draw(miBuque(), contactos(), cartaCache, config, arpaTargets);
+  const mio = miBuque();
+  const f = mio?.fallas;
+  ppi?.draw(mio, [...contactos(), ...ecosFalsos()], cartaCache, config, arpaTargets, {
+    fueraDeServicio: !!f?.radar,
+    sectorCiegoDeg: f?.sectorCiegoDeg ?? 0,
+  });
   requestAnimationFrame(loop);
 }
 

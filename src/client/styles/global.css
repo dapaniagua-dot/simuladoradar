@@ -987,6 +987,12 @@ output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
 .instr-tramos th { background: var(--xp-fondo); }
 .instr-tramos input { width: 52px; }
 .instr-matriz-peligro { color: #ff0000 !important; font-weight: bold; }
+.instr-fallas { border-top: 1px dashed #d0d0bf; padding-top: 2px; }
+.instr-fallas summary { cursor: pointer; color: #0046d5; }
+.instr-fallas summary.instr-con-fallas { color: #c00000; font-weight: bold; }
+.instr-fallas-grilla { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px 4px; margin: 3px 0; }
+.instr-fallas button { padding: 1px 6px; color: #000; background: linear-gradient(#fff, #ece9d8); border: 1px solid #003c74; border-radius: 3px; cursor: pointer; }
+.instr-fallas button.instr-activo { background: #ffd0d0; border-color: #c00000; font-weight: bold; }
 .instr-eventos { margin: 0; padding: 2px 4px 2px 22px; height: 140px; overflow-y: auto; background: #fff; border: 1px solid #7f9db9; }
 .instr-agregar select { flex: 1; min-width: 0; }
 .instr-comm { height: 90px; background: #fff; color: #000; border-color: #7f9db9; }
@@ -1027,3 +1033,13 @@ output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
 .observando #sesionTitulo::before, .radar-body.observando .topbar h1::before {
   content: "👁 ";
 }
+
+/* ---------- Fallas y control del instructor ---------- */
+.lampara { pointer-events: none; }
+.lampara.titila { animation: lampara-titila 1s steps(1) infinite; }
+@keyframes lampara-titila { 50% { filter: brightness(0.55); } }
+.aviso-control { color: #ffd000; font-weight: bold; }
+/* Mientras el instructor tiene el control, el alumno no opera la consola. */
+.bloqueado .consola-escenario { pointer-events: none; filter: grayscale(0.4); }
+/* El instructor con el control sí puede operarla desde su Show Console. */
+.observando.controlando .consola-escenario { pointer-events: auto; }

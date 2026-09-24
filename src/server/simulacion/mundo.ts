@@ -6,6 +6,7 @@ import { MODELO_DEFAULT, type ModeloBuque } from './buques.js';
 import {
   actualizarBlanco, crearBlanco, limitarVel, norm360, setDerrota, toBlancoDTO, type Blanco,
 } from './blancos.js';
+import { SIN_FALLAS } from '../../shared/types.js';
 import type {
   EstadoBuqueDTO,
   EstadoAmbienteDTO,
@@ -15,6 +16,7 @@ import type {
   MensajeNavtex,
   MensajePrivado,
   PuntoTraza,
+  FallasBuque,
   CrearBlancoPayload,
   ModificarBlancoPayload,
 } from '../../shared/types.js';
@@ -73,6 +75,10 @@ export interface EstadoBuque {
   rudderAngleDeg: number;     // lo que físicamente está
   // Autopiloto
   autopilotOn: boolean;
+  // Fallas inducidas y control del instructor
+  fallas: FallasBuque;
+  giroCongeladoDeg: number;
+  controlInstructor: boolean;
   setCourseDeg: number;
   // Recorrido realizado
   traza: PuntoTraza[];
@@ -144,6 +150,9 @@ export class Mundo {
       rudderAngleDeg: 0,
       autopilotOn: false,
       setCourseDeg: posInicial.headingDeg,
+      fallas: { ...SIN_FALLAS },
+      giroCongeladoDeg: posInicial.headingDeg,
+      controlInstructor: false,
       traza: [{ t: ahora, lat: posInicial.lat, lon: posInicial.lon }],
     });
   }
@@ -176,6 +185,9 @@ export class Mundo {
   setAutopilot(ownshipIndex: number, on: boolean): boolean {
     const b = this.buques.get(ownshipIndex);
     if (!b) return false;
+    // El autopiloto no conecta si está en falla o si falló el giro (no tiene
+    // rumbo contra el cual gobernar).
+    if (on && (b.fallas.autopiloto || b.fallas.giro)) return false;
     b.autopilotOn = on;
     if (!on) {
       // Al desconectar el autopiloto, dejamos el timón al medio para que
@@ -183,6 +195,28 @@ export class Mundo {
       b.rudderCommandDeg = 0;
     }
     return true;
+  }
+
+  // ===== Fallas inducidas y control del instructor =====
+  setFallas(ownshipIndex: number, cambios: Partial<FallasBuque>): boolean {
+    const b = this.buques.get(ownshipIndex);
+    if (!b) return false;
+    // Al fallar el giro, los repetidores quedan clavados en el último rumbo.
+    if (cambios.giro && !b.fallas.giro) b.giroCongeladoDeg = b.headingDeg;
+    b.fallas = { ...b.fallas, ...cambios };
+    if (b.fallas.autopiloto || b.fallas.giro) b.autopilotOn = false;
+    return true;
+  }
+
+  setControlInstructor(ownshipIndex: number, tomar: boolean): boolean {
+    const b = this.buques.get(ownshipIndex);
+    if (!b) return false;
+    b.controlInstructor = tomar;
+    return true;
+  }
+
+  controlInstructor(ownshipIndex: number): boolean {
+    return this.buques.get(ownshipIndex)?.controlInstructor ?? false;
   }
 
   iniciar(): void {
@@ -353,8 +387,9 @@ export class Mundo {
     //    velocidades porque la tabla de velocidades es asimétrica (atrás el
     //    buque anda mucho menos): con una avante y otra atrás a full las RPM
     //    se cancelan y el buque gira casi en el lugar, como en la realidad.
-    const rpmBabor = rpmDe(b.modelo, b.telegrafoBabor);
-    const rpmEstribor = rpmDe(b.modelo, b.telegrafoEstribor);
+    // Con la máquina en falla no hay propulsión: el buque va frenando.
+    const rpmBabor = b.fallas.maquina ? 0 : rpmDe(b.modelo, b.telegrafoBabor);
+    const rpmEstribor = b.fallas.maquina ? 0 : rpmDe(b.modelo, b.telegrafoEstribor);
     const vObj = velObjetivoPorRpm(b.modelo, (rpmBabor + rpmEstribor) / 2);
     const tau = Math.max(1, b.modelo.tauVelocidad);
     b.velocidadKn += ((vObj - b.velocidadKn) * dt) / tau;
@@ -446,6 +481,9 @@ function toDTO(b: EstadoBuque): EstadoBuqueDTO {
     setCourseDeg: b.setCourseDeg,
     distanceTotalNm: b.distanceTotalNm,
     tripStartedAt: b.tripStartedAt,
+    fallas: b.fallas,
+    giroCongeladoDeg: b.giroCongeladoDeg,
+    controlInstructor: b.controlInstructor,
   };
 }
 

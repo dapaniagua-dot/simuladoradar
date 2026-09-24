@@ -144,7 +144,30 @@ export interface EstadoBuqueDTO {
   // Métricas acumuladas
   distanceTotalNm: number;  // millas náuticas recorridas desde el arranque
   tripStartedAt: number;    // timestamp ms cuando arrancó la sesión
+  // Fallas que provoca el instructor y lectura congelada del giro.
+  fallas: FallasBuque;
+  giroCongeladoDeg: number; // último rumbo que marcó el giro antes de fallar
+  // El instructor tomó el control del buque ("Switch Ctrl" del Melipal).
+  controlInstructor: boolean;
 }
+
+// Fallas inducidas por el instructor (pestañas Command y Radar de cada Own
+// Ship en el Melipal).
+export interface FallasBuque {
+  gps: boolean;
+  giro: boolean;
+  log: boolean;
+  autopiloto: boolean;
+  maquina: boolean;
+  radar: boolean;            // radar fuera de servicio
+  sectorCiegoDeg: number;    // amplitud del sector ciego a popa (0 = sin sector)
+  ecoFalsoDeg: number | null; // marcación relativa del eco falso (null = sin eco falso)
+}
+
+export const SIN_FALLAS: FallasBuque = {
+  gps: false, giro: false, log: false, autopiloto: false, maquina: false,
+  radar: false, sectorCiegoDeg: 0, ecoFalsoDeg: null,
+};
 
 // Estado ambiental del mundo (compartido por todos los buques de la sesión).
 // En MVP 3.5 viene mockeado con valores fijos. En MVP futuro se conecta a un
@@ -241,6 +264,8 @@ export interface TickPayload {
 
 // Comandos que el cliente envía al server por Socket.IO.
 export interface ShipControlPayload {
+  // Solo cuando manda el instructor con el control tomado: a qué buque va.
+  ownshipIndex?: number;
   telegrafoBabor?: TelegrafoId;
   telegrafoEstribor?: TelegrafoId;
   rudderCommandDeg?: number;

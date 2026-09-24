@@ -400,7 +400,30 @@ async function loadParticipaciones(): Promise<void> {
         <span class="instr-conexion" data-conexion>Aula <b data-aula>NO</b> · Radar <b data-radar>NO</b></span>
         <button type="button" data-ver-radar title="Ver en vivo el radar de este alumno">Show Radar</button>
         <button type="button" data-ver-consola title="Ver en vivo el aula (consola, radar y carta) de este alumno">Show Console</button>
-      </div>` : ''}
+      </div>
+      <details class="instr-fallas">
+        <summary>Fallas / Control</summary>
+        <div class="instr-fallas-grilla">
+          <label><input type="checkbox" data-falla="gps" /> GPS</label>
+          <label><input type="checkbox" data-falla="giro" /> Gyro</label>
+          <label><input type="checkbox" data-falla="log" /> Log</label>
+          <label><input type="checkbox" data-falla="autopiloto" /> Auto Pilot</label>
+          <label><input type="checkbox" data-falla="maquina" /> Engine</label>
+          <label><input type="checkbox" data-falla="radar" /> Radar</label>
+        </div>
+        <div class="instr-fila">
+          <label><input type="checkbox" data-sector /> Blind Sector</label>
+          <input type="number" class="instr-num" data-sector-deg min="5" max="180" step="5" value="30" /> °
+        </div>
+        <div class="instr-fila">
+          <label><input type="checkbox" data-eco /> False Echo</label>
+          <input type="number" class="instr-num" data-eco-deg min="0" max="359" step="5" value="270" /> °
+        </div>
+        <div class="instr-os-acciones">
+          <button type="button" data-perder-arpa title="El radar del alumno suelta todos sus blancos ARPA">Lose ARPA Targets</button>
+          <button type="button" data-control title="Tomar el control del buque (se maneja desde Show Console)">Switch Ctrl</button>
+        </div>
+      </details>` : ''}
       ${editable ? `
       <div class="instr-os-pos">
         <label>LAT <input type="number" step="0.0001" data-lat value="${p.latInicial ?? ''}" /></label>
@@ -425,6 +448,7 @@ async function loadParticipaciones(): Promise<void> {
     row.querySelector('[data-ubicar]')?.addEventListener('click', () => iniciarUbicar(p));
     row.querySelector('[data-ver-radar]')?.addEventListener('click', () => verRadar(p));
     row.querySelector('[data-ver-consola]')?.addEventListener('click', () => verConsola(p));
+    cablearFallas(row, p);
     row.querySelector('[data-guardar]')?.addEventListener('click', async () => {
       const num = (sel: string) => Number(row.querySelector<HTMLInputElement>(sel)!.value);
       const [lat, lon, hdg] = [num('[data-lat]'), num('[data-lon]'), num('[data-hdg]')];
@@ -443,6 +467,86 @@ async function loadParticipaciones(): Promise<void> {
   }
   cartaVista?.onSeleccion(cartaVista.seleccionado);
   refrescarPresencia();
+}
+
+// ----- Fallas inducidas y control del buque -------------------------------------------
+const NOMBRES_FALLA: Record<string, string> = {
+  gps: 'GPS', giro: 'Gyro', log: 'Log', autopiloto: 'Auto Pilot', maquina: 'Engine', radar: 'Radar',
+};
+
+function cablearFallas(row: HTMLElement, p: Participacion): void {
+  const os = p.ownshipIndex;
+  const nombre = `OS-${String(os).padStart(2, '0')}`;
+  const enviar = (fallas: Record<string, unknown>) => socket?.emit('fallas:set', { ownshipIndex: os, fallas });
+  for (const chk of row.querySelectorAll<HTMLInputElement>('[data-falla]')) {
+    chk.addEventListener('change', () => {
+      enviar({ [chk.dataset.falla!]: chk.checked });
+      registrarEvento(`${nombre}: falla ${NOMBRES_FALLA[chk.dataset.falla!]} ${chk.checked ? 'ON' : 'OFF'}`);
+    });
+  }
+  const sector = row.querySelector<HTMLInputElement>('[data-sector]');
+  const sectorDeg = row.querySelector<HTMLInputElement>('[data-sector-deg]');
+  const aplicarSector = () => {
+    if (!sector || !sectorDeg) return;
+    enviar({ sectorCiegoDeg: sector.checked ? Number(sectorDeg.value) || 30 : 0 });
+    registrarEvento(`${nombre}: sector ciego ${sector.checked ? `${sectorDeg.value}°` : 'OFF'}`);
+  };
+  sector?.addEventListener('change', aplicarSector);
+  sectorDeg?.addEventListener('change', () => { if (sector?.checked) aplicarSector(); });
+  const eco = row.querySelector<HTMLInputElement>('[data-eco]');
+  const ecoDeg = row.querySelector<HTMLInputElement>('[data-eco-deg]');
+  const aplicarEco = () => {
+    if (!eco || !ecoDeg) return;
+    enviar({ ecoFalsoDeg: eco.checked ? Number(ecoDeg.value) || 0 : null });
+    registrarEvento(`${nombre}: eco falso ${eco.checked ? `${ecoDeg.value}°` : 'OFF'}`);
+  };
+  eco?.addEventListener('change', aplicarEco);
+  ecoDeg?.addEventListener('change', () => { if (eco?.checked) aplicarEco(); });
+  row.querySelector('[data-perder-arpa]')?.addEventListener('click', () => {
+    socket?.emit('radar:perder-arpa', { ownshipIndex: os });
+    registrarEvento(`${nombre}: Lose ARPA Targets`);
+  });
+  row.querySelector('[data-control]')?.addEventListener('click', () => {
+    const b = ultimoTick?.buques.find((x) => x.ownshipIndex === os);
+    const tomar = !b?.controlInstructor;
+    socket?.emit('control:set', { ownshipIndex: os, tomar });
+    registrarEvento(`${nombre}: control ${tomar ? 'tomado por el instructor' : 'devuelto al alumno'}`);
+    // Tomar el control abre la consola del buque para manejarlo.
+    if (tomar) verConsola(p);
+  });
+}
+
+// Refleja en la fila el estado real de las fallas (por si otro cambio llegó
+// del server), sin tocar el campo que se está editando.
+function sincronizarFallas(row: HTMLElement, b: EstadoBuqueDTO): void {
+  const f = b.fallas;
+  if (!f) return;
+  const activo = document.activeElement;
+  for (const chk of row.querySelectorAll<HTMLInputElement>('[data-falla]')) {
+    chk.checked = Boolean(f[chk.dataset.falla as keyof typeof f]);
+  }
+  const sector = row.querySelector<HTMLInputElement>('[data-sector]');
+  if (sector) sector.checked = f.sectorCiegoDeg > 0;
+  const sectorDeg = row.querySelector<HTMLInputElement>('[data-sector-deg]');
+  if (sectorDeg && f.sectorCiegoDeg > 0 && activo !== sectorDeg) sectorDeg.value = String(f.sectorCiegoDeg);
+  const eco = row.querySelector<HTMLInputElement>('[data-eco]');
+  if (eco) eco.checked = f.ecoFalsoDeg !== null;
+  const ecoDeg = row.querySelector<HTMLInputElement>('[data-eco-deg]');
+  if (ecoDeg && f.ecoFalsoDeg !== null && activo !== ecoDeg) ecoDeg.value = String(f.ecoFalsoDeg);
+  const control = row.querySelector<HTMLButtonElement>('[data-control]');
+  if (control) {
+    control.textContent = b.controlInstructor ? 'Devolver control' : 'Switch Ctrl';
+    control.classList.toggle('instr-activo', b.controlInstructor);
+  }
+  const resumen = row.querySelector<HTMLElement>('.instr-fallas summary');
+  if (resumen) {
+    const activas = Object.entries(NOMBRES_FALLA).filter(([k]) => f[k as keyof typeof f] === true).map(([, v]) => v);
+    if (f.sectorCiegoDeg > 0) activas.push('Blind Sector');
+    if (f.ecoFalsoDeg !== null) activas.push('False Echo');
+    if (b.controlInstructor) activas.push('CONTROL');
+    resumen.textContent = activas.length ? `Fallas / Control — ${activas.join(', ')}` : 'Fallas / Control';
+    resumen.classList.toggle('instr-con-fallas', activas.length > 0);
+  }
 }
 
 // ----- Show Radar / Show Console --------------------------------------------------
@@ -489,6 +593,7 @@ function refrescarDatosOS(): void {
     const b = ultimoTick.buques.find((x) => x.ownshipIndex === Number(row.dataset.os));
     const datos = row.querySelector<HTMLElement>('[data-vivo]');
     if (!datos || !b) continue;
+    sincronizarFallas(row, b);
     const timon = Math.round(b.rudderCommandDeg);
     datos.textContent = `HDG ${b.headingDeg.toFixed(1)}° · ${b.velocidadKn.toFixed(1)} kn · `
       + `Tel ${b.telegrafoBabor}/${b.telegrafoEstribor} · Timón ${timon === 0 ? '0' : `${Math.abs(timon)}${timon < 0 ? 'P' : 'S'}`}`
