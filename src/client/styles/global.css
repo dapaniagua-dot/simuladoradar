@@ -979,6 +979,14 @@ output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
   border-radius: 3px;
   cursor: pointer;
 }
+.instr-tag-dt { background: #b8d8ff; }
+.instr-tag-t { background: #b8f0b8; }
+.instr-num { width: 60px; }
+.instr-tramos { border-collapse: collapse; width: 100%; }
+.instr-tramos th, .instr-tramos td { border: 1px solid #d0d0bf; padding: 1px 3px; font-size: 11px; color: #000; background: #fff; text-transform: none; letter-spacing: 0; text-align: left; }
+.instr-tramos th { background: var(--xp-fondo); }
+.instr-tramos input { width: 52px; }
+.instr-matriz-peligro { color: #ff0000 !important; font-weight: bold; }
 .instr-eventos { margin: 0; padding: 2px 4px 2px 22px; height: 140px; overflow-y: auto; background: #fff; border: 1px solid #7f9db9; }
 .instr-agregar select { flex: 1; min-width: 0; }
 .instr-comm { height: 90px; background: #fff; color: #000; border-color: #7f9db9; }

@@ -92,6 +92,13 @@ const BISEL = 26;
 const CLUTTER_PUNTOS = 900;
 const CLUTTER_ESCALA_NM = 0.6;
 
+// Lo mínimo que hace falta para dibujar el eco de otro buque (alumno o blanco).
+export interface EcoBuque {
+  lat: number;
+  lon: number;
+  headingDeg: number;
+}
+
 export interface Geometria {
   cx: number;
   cy: number;
@@ -154,7 +161,7 @@ export class PPI {
 
   draw(
     ownShip: EstadoBuqueDTO | null,
-    otherShips: EstadoBuqueDTO[],
+    otherShips: EcoBuque[],
     carta: CartaParseada | null,
     config: PPIConfig,
     arpaTargets: DatosArpa[] = [],
@@ -318,7 +325,7 @@ export class PPI {
   private dibujarEcosBuques(
     ctx: CanvasRenderingContext2D,
     ownShip: EstadoBuqueDTO,
-    otherShips: EstadoBuqueDTO[],
+    otherShips: EcoBuque[],
     alcanceNm: number,
     pixelsPorMilla: number,
     color: number[],
@@ -503,7 +510,7 @@ export class PPI {
       ctx.font = '11px Tahoma, Verdana, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText(t.ownshipIndex.toString().padStart(2, '0'), x + 8, y + 6);
+      ctx.fillText(t.etiqueta, x + 8, y + 6);
     }
   }
 }

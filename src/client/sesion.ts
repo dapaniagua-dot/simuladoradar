@@ -2,6 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import { CartaInstructor } from './instructor/carta-instructor.js';
 import type {
   ApiError,
+  BlancoDTO,
   CartaParseada,
   EstadoBuqueDTO,
   LoginResponse,
@@ -16,6 +17,7 @@ import type {
   Sesion,
   TickPayload,
   TrazaPuntoPayload,
+  WaypointDTO,
 } from '../shared/types.js';
 
 const titulo = el<HTMLElement>('sesionTitulo');
@@ -47,6 +49,11 @@ let presencia: PresenciaEstado = {};
 // elegir otro alumno (como la PC de radar del instructor en el Melipal).
 let ventanaRadar: Window | null = null;
 let radarObservado: number | null = null;
+// Blancos del instructor tal como llegaron en el último tick. Las listas del
+// panel se rearman solo cuando cambian los blancos (no en cada tick, para no
+// pisar lo que el profesor está escribiendo).
+let blancos: BlancoDTO[] = [];
+let firmaBlancos = '';
 
 async function init(): Promise<void> {
   const me = await fetch('/api/auth/me', { credentials: 'include' });
@@ -155,7 +162,10 @@ function conectarSocket(): void {
       pausado = payload.pausado;
       refrescarEstado();
     }
+    blancos = payload.blancos ?? [];
+    cartaVista?.setBlancos(blancos);
     cartaVista?.setBuques(payload.buques);
+    refrescarBlancos();
     refrescarMatriz();
     refrescarDatosOS();
   });
@@ -237,6 +247,33 @@ function cablearInterfaz(): void {
   el<HTMLInputElement>('chkSegmentos').addEventListener('change', (e) => {
     if (cartaVista) { cartaVista.mostrarSegmentos = (e.target as HTMLInputElement).checked; cartaVista.dibujar(); }
   });
+  el<HTMLInputElement>('chkBlancos').addEventListener('change', (e) => {
+    if (cartaVista) { cartaVista.mostrarBlancos = (e.target as HTMLInputElement).checked; cartaVista.dibujar(); }
+  });
+  el<HTMLInputElement>('velTramoNuevo').addEventListener('input', (e) => {
+    const v = Number((e.target as HTMLInputElement).value);
+    if (cartaVista && Number.isFinite(v) && v > 0) cartaVista.velTramoKn = Math.min(40, v);
+  });
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.instr-tb[data-insertar]')) {
+    b.addEventListener('click', () => {
+      if (!cartaVista) return;
+      if (sesion?.estado !== 'abierta') {
+        alert('Los blancos se agregan con la sesión abierta. Tip: abrila (Play) y pausala mientras armás el ejercicio.');
+        return;
+      }
+      const tipo = b.dataset.insertar as 'DT' | 'T';
+      if (cartaVista.insercionActual() === tipo) {
+        cartaVista.cancelarInsercion();
+        return;
+      }
+      cartaVista.iniciarInsercion(tipo);
+      modoBanner.hidden = false;
+      modoTexto.textContent = tipo === 'DT'
+        ? 'Nuevo Directed Target: hacé click en la carta y arrastrá el vector (rumbo y velocidad).'
+        : 'Nuevo Target: hacé click en cada waypoint de la derrota; doble click o Enter para terminar.';
+      pintarBarra();
+    });
+  }
   el<HTMLInputElement>('chkBuques').addEventListener('change', (e) => {
     if (cartaVista) { cartaVista.mostrarBuques = (e.target as HTMLInputElement).checked; cartaVista.dibujar(); }
   });
@@ -245,6 +282,7 @@ function cablearInterfaz(): void {
   el('btnLimpiarEventos').addEventListener('click', () => { el('registroEventos').innerHTML = ''; });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && cartaVista?.estaUbicando()) cancelarUbicar();
+    if (e.key === 'Escape' && cartaVista?.insercionActual()) cartaVista.cancelarInsercion();
   });
 
   cablearComunicaciones();
@@ -255,6 +293,7 @@ function cablearInterfaz(): void {
 function pintarBarra(): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>('.instr-tb')) {
     b.style.backgroundImage = `url(/img/instructor/${b.dataset.icono}.png)`;
+    if (b.dataset.insertar) b.setAttribute('aria-pressed', String(cartaVista?.insercionActual() === b.dataset.insertar));
     if (b.dataset.herramienta) {
       b.setAttribute('aria-pressed', String((cartaVista?.herramienta ?? 'puntero') === b.dataset.herramienta));
     }
@@ -294,13 +333,27 @@ async function loadCarta(): Promise<void> {
     set('estBrg', `Bearing: ${info.marcacion === null ? '—' : `${info.marcacion.toFixed(1)}°`}`);
     set('estRng', `Range: ${info.rangoNm === null ? '—' : `${info.rangoNm.toFixed(2)} nm`}`);
   };
-  cartaVista.onSeleccion = (os) => {
-    const ref = os === null ? 'FREE' : `OS-${String(os).padStart(2, '0')}`;
+  cartaVista.onSeleccion = (id) => {
+    const ref = id === null ? 'FREE' : etiqueta(id);
     el('curRef').textContent = ref;
     el('estRef').textContent = `Reference: ${ref}`;
-    for (const row of alumnosLista.querySelectorAll<HTMLElement>('.instr-os')) {
-      row.classList.toggle('seleccionado', Number(row.dataset.os) === os);
+    for (const row of document.querySelectorAll<HTMLElement>('.instr-os')) {
+      const propio = row.dataset.os ? `OS-${row.dataset.os}` : row.dataset.blanco;
+      row.classList.toggle('seleccionado', propio === id);
     }
+  };
+  cartaVista.onCrearDT = (lat, lon, rumbo, velKn) => {
+    socket?.emit('blanco:crear', { tipo: 'DT', lat, lon, rumbo, velKn });
+    registrarEvento(`Nuevo Directed Target (${rumbo.toFixed(0)}°, ${velKn.toFixed(1)} kn)`);
+  };
+  cartaVista.onCrearTarget = (waypoints) => {
+    const w0 = waypoints[0]!;
+    socket?.emit('blanco:crear', { tipo: 'T', lat: w0.lat, lon: w0.lon, rumbo: 0, velKn: w0.velKn, waypoints });
+    registrarEvento(`Nuevo Target (${waypoints.length} waypoints)`);
+  };
+  cartaVista.onFinInsercion = () => {
+    modoBanner.hidden = true;
+    pintarBarra();
   };
   cartaVista.onUbicado = (os, lat, lon, hdg) => {
     modoBanner.hidden = true;
@@ -361,8 +414,8 @@ async function loadParticipaciones(): Promise<void> {
       </div>` : ''}
     `;
     row.querySelector('[data-centrar]')!.addEventListener('click', () => {
-      cartaVista?.seleccionar(p.ownshipIndex);
-      cartaVista?.centrarBuque(p.ownshipIndex);
+      cartaVista?.seleccionar(`OS-${p.ownshipIndex}`);
+      cartaVista?.centrarObjeto(`OS-${p.ownshipIndex}`);
     });
     row.querySelector('[data-quitar]')?.addEventListener('click', async () => {
       if (!confirm(`¿Quitar a ${p.alumnoNombre} de la sesión?`)) return;
@@ -510,11 +563,13 @@ addAlumnoForm.addEventListener('submit', async (e) => {
 // ----- Matriz CPA - TCPA -----------------------------------------------------------
 // Para cada par de buques: marcación y distancia actuales, y punto de máximo
 // acercamiento suponiendo que ambos mantienen rumbo y velocidad.
-function cpaEntre(a: EstadoBuqueDTO, b: EstadoBuqueDTO): { brg: number; rng: number; cpa: number; tcpaMin: number | null } {
+type Movil = Pick<EstadoBuqueDTO, 'lat' | 'lon' | 'headingDeg' | 'velocidadKn'>;
+
+function cpaEntre(a: Movil, b: Movil): { brg: number; rng: number; cpa: number; tcpaMin: number | null } {
   const cosLat = Math.cos((a.lat * Math.PI) / 180);
   const xE = (b.lon - a.lon) * 60 * cosLat;
   const yN = (b.lat - a.lat) * 60;
-  const vel = (x: EstadoBuqueDTO) => {
+  const vel = (x: Movil) => {
     const r = (x.headingDeg * Math.PI) / 180;
     return [Math.sin(r) * x.velocidadKn, Math.cos(r) * x.velocidadKn];
   };
@@ -530,31 +585,166 @@ function cpaEntre(a: EstadoBuqueDTO, b: EstadoBuqueDTO): { brg: number; rng: num
   return { brg, rng, cpa: Math.hypot(xE + vE * tHoras, yN + vN * tHoras), tcpaMin: tHoras * 60 };
 }
 
+// Filas: los buques de los alumnos. Columnas: los buques y los blancos. En
+// rojo, los pares que violan los límites (CPA < 1 nm con TCPA entre 0 y 12 min).
+const LIMITE_CPA_NM = 1;
+const LIMITE_TCPA_MIN = 12;
+
 function refrescarMatriz(): void {
   const tabla = el<HTMLTableElement>('matrizCpa');
-  const buques = ultimoTick?.buques ?? [];
-  if (buques.length === 0) {
+  const filas = (ultimoTick?.buques ?? []).map((b) => ({ id: `OS-${b.ownshipIndex}`, ...b }));
+  if (filas.length === 0) {
     tabla.innerHTML = '<tbody><tr><td class="instr-desc">Sin buques en simulación.</td></tr></tbody>';
     return;
   }
-  const os = (b: EstadoBuqueDTO) => `OS-${String(b.ownshipIndex).padStart(2, '0')}`;
+  const columnas: (Movil & { id: string })[] = [...filas, ...blancos];
   let html = '<thead><tr><th rowspan="2"></th><th rowspan="2">Course</th><th rowspan="2">Speed</th>';
-  html += buques.map((b) => `<th colspan="4">${os(b)}</th>`).join('') + '</tr><tr>';
-  html += buques.map(() => '<th>Bearing</th><th>Range</th><th>CPA</th><th>TCPA</th>').join('') + '</tr></thead><tbody>';
-  for (const a of buques) {
-    html += `<tr><th>${os(a)}</th><td>${a.headingDeg.toFixed(1)}</td><td>${a.velocidadKn.toFixed(1)}</td>`;
-    for (const b of buques) {
-      if (a === b) {
+  html += columnas.map((c) => `<th colspan="4">${etiqueta(c.id)}</th>`).join('') + '</tr><tr>';
+  html += columnas.map(() => '<th>Bearing</th><th>Range</th><th>CPA</th><th>TCPA</th>').join('') + '</tr></thead><tbody>';
+  for (const a of filas) {
+    html += `<tr><th>${etiqueta(a.id)}</th><td>${a.headingDeg.toFixed(1)}</td><td>${a.velocidadKn.toFixed(1)}</td>`;
+    for (const c of columnas) {
+      if (c.id === a.id) {
         html += '<td colspan="4" class="instr-matriz-diag">--------</td>';
         continue;
       }
-      const c = cpaEntre(a, b);
-      html += `<td>${c.brg.toFixed(1)}</td><td>${c.rng.toFixed(2)}</td><td>${c.cpa.toFixed(2)}</td>`
-        + `<td>${c.tcpaMin === null ? '—' : Math.round(c.tcpaMin)}</td>`;
+      const r = cpaEntre(a, c);
+      const peligro = r.cpa < LIMITE_CPA_NM && r.tcpaMin !== null && r.tcpaMin > 0 && r.tcpaMin < LIMITE_TCPA_MIN;
+      const cls = peligro ? ' class="instr-matriz-peligro"' : '';
+      html += `<td>${r.brg.toFixed(1)}</td><td>${r.rng.toFixed(2)}</td><td${cls}>${r.cpa.toFixed(2)}</td>`
+        + `<td${cls}>${r.tcpaMin === null ? '—' : Math.round(r.tcpaMin)}</td>`;
     }
     html += '</tr>';
   }
   tabla.innerHTML = html + '</tbody>';
+}
+
+// "OS-1" → "OS-01", "DT-2" → "DT-02".
+function etiqueta(id: string): string {
+  const [tipo, n] = id.split('-');
+  return `${tipo}-${String(n).padStart(2, '0')}`;
+}
+
+// ----- Blancos: listas del panel ----------------------------------------------------
+function refrescarBlancos(): void {
+  const dts = blancos.filter((b) => b.tipo === 'DT');
+  const ts = blancos.filter((b) => b.tipo === 'T');
+  el('exCantDT').textContent = String(dts.length);
+  el('exCantT').textContent = String(ts.length);
+  const firma = blancos.map((b) => `${b.id}:${b.waypoints.length}`).join('|');
+  if (firma !== firmaBlancos) {
+    firmaBlancos = firma;
+    armarListaDT(dts);
+    armarListaT(ts);
+    cartaVista?.onSeleccion(cartaVista.seleccionado);
+  }
+  // Datos en vivo sin rearmar (para no pisar lo que se está escribiendo).
+  for (const b of blancos) {
+    const datos = document.querySelector<HTMLElement>(`[data-blanco="${b.id}"] [data-vivo]`);
+    if (!datos) continue;
+    datos.textContent = b.tipo === 'DT'
+      ? `HDG ${b.headingDeg.toFixed(1)}° · ${b.velocidadKn.toFixed(1)} kn`
+        + (Math.abs(b.rumboPretendido - b.headingDeg) > 0.5 || Math.abs(b.velPretendida - b.velocidadKn) > 0.1
+          ? ` → ${b.rumboPretendido.toFixed(0)}° · ${b.velPretendida.toFixed(1)} kn` : '')
+      : `HDG ${b.headingDeg.toFixed(1)}° · ${b.velocidadKn.toFixed(1)} kn · `
+        + (b.terminado ? 'fin de la derrota' : `tramo ${b.tramo}→${b.tramo + 1}`);
+  }
+}
+
+function cabeceraBlanco(b: BlancoDTO, nombre: string): string {
+  return `
+    <div class="instr-os-cab">
+      <button type="button" class="instr-os-tag instr-tag-${b.tipo.toLowerCase()}" data-centrar title="Centrar en la carta y tomar de referencia">${etiqueta(b.id)}</button>
+      <span class="instr-os-nombre">${nombre}</span>
+      <button type="button" class="instr-btn-chico" data-borrar title="Borrar">✕</button>
+    </div>
+    <div class="instr-os-datos" data-vivo></div>`;
+}
+
+function cablearCabecera(fila: HTMLElement, b: BlancoDTO): void {
+  fila.querySelector('[data-centrar]')!.addEventListener('click', () => {
+    cartaVista?.seleccionar(b.id);
+    cartaVista?.centrarObjeto(b.id);
+  });
+  fila.querySelector('[data-borrar]')!.addEventListener('click', () => {
+    if (!confirm(`¿Borrar ${etiqueta(b.id)}?`)) return;
+    socket?.emit('blanco:borrar', { id: b.id });
+    registrarEvento(`${etiqueta(b.id)} borrado`);
+  });
+}
+
+function armarListaDT(dts: BlancoDTO[]): void {
+  const lista = el('listaDT');
+  lista.innerHTML = dts.length === 0 ? '<p class="instr-desc">Sin Directed Targets.</p>' : '';
+  for (const b of dts) {
+    const fila = document.createElement('div');
+    fila.className = 'instr-os';
+    fila.dataset.blanco = b.id;
+    fila.innerHTML = cabeceraBlanco(b, 'Directed Target') + `
+      <div class="instr-os-pos">
+        <label>New Course <input type="number" min="0" max="359" step="1" data-rumbo value="${Math.round(b.rumboPretendido)}" /></label>
+        <label>New Speed <input type="number" min="0" max="40" step="0.5" data-vel value="${b.velPretendida.toFixed(1)}" /></label>
+      </div>
+      <div class="instr-os-acciones"><button type="button" data-aplicar>Aplicar</button></div>`;
+    cablearCabecera(fila, b);
+    fila.querySelector('[data-aplicar]')!.addEventListener('click', () => {
+      const rumbo = Number(fila.querySelector<HTMLInputElement>('[data-rumbo]')!.value);
+      const velKn = Number(fila.querySelector<HTMLInputElement>('[data-vel]')!.value);
+      if (!Number.isFinite(rumbo) || !Number.isFinite(velKn)) return;
+      socket?.emit('blanco:modificar', { id: b.id, rumbo, velKn });
+      registrarEvento(`${etiqueta(b.id)}: nuevo rumbo ${rumbo.toFixed(0)}°, ${velKn.toFixed(1)} kn`);
+    });
+    lista.appendChild(fila);
+  }
+}
+
+function armarListaT(ts: BlancoDTO[]): void {
+  const lista = el('listaT');
+  lista.innerHTML = ts.length === 0 ? '<p class="instr-desc">Sin Targets.</p>' : '';
+  for (const b of ts) {
+    const tramos = b.waypoints.slice(0, -1).map((w, i) => {
+      const s = b.waypoints[i + 1]!;
+      const nm = distanciaNm(w, s);
+      return { i, nm, velKn: w.velKn };
+    });
+    const total = tramos.reduce((acc, t) => acc + t.nm, 0);
+    const horas = tramos.reduce((acc, t) => acc + t.nm / Math.max(0.1, t.velKn), 0);
+    const fila = document.createElement('div');
+    fila.className = 'instr-os';
+    fila.dataset.blanco = b.id;
+    fila.innerHTML = cabeceraBlanco(b, 'Target') + `
+      <div class="instr-desc">Derrota: ${total.toFixed(2)} nm · ${Math.round(horas * 60)} min</div>
+      <table class="instr-tramos">
+        <thead><tr><th>Tramo</th><th>Dist.</th><th>Vel. (kn)</th></tr></thead>
+        <tbody>${tramos.map((t) => `<tr><td>${t.i}→${t.i + 1}</td><td>${t.nm.toFixed(2)} nm</td>
+          <td><input type="number" min="0.1" max="40" step="0.5" data-tramo="${t.i}" value="${t.velKn.toFixed(1)}" /></td></tr>`).join('')}</tbody>
+      </table>
+      <div class="instr-os-acciones">
+        <button type="button" data-copiar title="Copiar la velocidad del primer tramo a todos">Copy to All</button>
+        <button type="button" data-aplicar>Aplicar</button>
+      </div>`;
+    cablearCabecera(fila, b);
+    const inputs = () => [...fila.querySelectorAll<HTMLInputElement>('[data-tramo]')];
+    fila.querySelector('[data-copiar]')!.addEventListener('click', () => {
+      const v = inputs()[0]?.value;
+      if (v) for (const inp of inputs()) inp.value = v;
+    });
+    fila.querySelector('[data-aplicar]')!.addEventListener('click', () => {
+      const waypoints: WaypointDTO[] = b.waypoints.map((w, i) => {
+        const inp = inputs()[i];
+        const v = inp ? Number(inp.value) : w.velKn;
+        return { lat: w.lat, lon: w.lon, velKn: Number.isFinite(v) ? Math.max(0.1, v) : w.velKn };
+      });
+      socket?.emit('blanco:modificar', { id: b.id, waypoints });
+      registrarEvento(`${etiqueta(b.id)}: velocidades de la derrota actualizadas`);
+    });
+    lista.appendChild(fila);
+  }
+}
+
+function distanciaNm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const xE = (b.lon - a.lon) * 60 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.hypot(xE, (b.lat - a.lat) * 60);
 }
 
 // ----- Relojes y eventos ------------------------------------------------------------

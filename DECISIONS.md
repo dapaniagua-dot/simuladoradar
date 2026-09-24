@@ -225,6 +225,18 @@ En la carta, el alumno elige cada cuánto dibujar un punto (5 s a 5 min), puede 
 
 ---
 
+## D20. Blancos del instructor: Directed Targets y Targets
+
+**Decidido (2026-09-24, pedido de Diego):** como en el Melipal (manual 3.2.1.2, 3.2.1.3, 3.5.6 y 3.5.7):
+
+- **Directed Target (DT):** el profesor lo inserta con el botón DT (click = posición, arrastrar = vector de rumbo y velocidad). Después fija rumbo y velocidad nuevos; con la simulación corriendo el blanco se acerca de a poco (giro máx. ~48°/min, velocidad con constante de tiempo de 45 s, valores provisorios) y en pausa cambia al instante.
+- **Target (T):** se inserta con el botón T haciendo click en cada waypoint (doble click o Enter para terminar). Recorre la derrota con una velocidad por tramo (mínimo 0.1 kn), editable desde el panel, con "Copy to All". Se detiene al final.
+- **Dónde se ven:** en el **radar** de todos los alumnos (ecos y ARPA; el ARPA ahora sigue "contactos" con id `OS-n` / `DT-n` / `T-n`), en la carta del instructor y en la **matriz CPA-TCPA** (columnas; en rojo si CPA < 1 nm y TCPA entre 0 y 12 min). **No** en la carta del alumno (solo GPS propio).
+
+**Limitación a conversar:** los blancos viven en memoria mientras la sesión está abierta. Se pierden si la sesión se cierra o el server se reinicia (por ejemplo, con un deploy). Para armar el ejercicio antes de la clase y reutilizarlo hace falta guardarlo en la base de datos (una columna o tabla nueva): queda como siguiente paso, junto con "guardar / abrir ejercicio" de la barra.
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.

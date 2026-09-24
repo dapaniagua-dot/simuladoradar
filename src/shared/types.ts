@@ -187,9 +187,54 @@ export interface PresenciaEvento {
   ts: number;
 }
 
+// Blancos del instructor: Directed Targets (rumbo y velocidad que fija el
+// profesor) y Targets (siguen una derrota de waypoints).
+export type TipoBlanco = 'DT' | 'T';
+
+// velKn: velocidad del tramo que EMPIEZA en este waypoint.
+export interface WaypointDTO {
+  lat: number;
+  lon: number;
+  velKn: number;
+}
+
+export interface BlancoDTO {
+  id: string;            // "DT-1", "T-2"
+  tipo: TipoBlanco;
+  numero: number;
+  lat: number;
+  lon: number;
+  headingDeg: number;
+  velocidadKn: number;
+  rumboPretendido: number;
+  velPretendida: number;
+  waypoints: WaypointDTO[]; // solo Targets
+  tramo: number;            // índice del waypoint desde el que navega
+  terminado: boolean;       // Target que llegó al final de su derrota
+}
+
+export interface CrearBlancoPayload {
+  tipo: TipoBlanco;
+  lat: number;
+  lon: number;
+  rumbo: number;
+  velKn: number;
+  waypoints?: WaypointDTO[];
+}
+
+export interface ModificarBlancoPayload {
+  id: string;
+  rumbo?: number;
+  velKn?: number;
+  lat?: number;
+  lon?: number;
+  waypoints?: WaypointDTO[];
+}
+
 export interface TickPayload {
   t: number;
   buques: EstadoBuqueDTO[];
+  blancos: BlancoDTO[];
   ambiente: EstadoAmbienteDTO;
   pausado: boolean;
 }
