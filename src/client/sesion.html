@@ -34,8 +34,8 @@
     <button type="button" class="instr-tb" data-icono="replay" disabled title="Replay: no disponible todavía"></button>
     <span class="instr-sep"></span>
     <button type="button" class="instr-tb" data-icono="os" id="btnSeccionOS" title="Own Ships: alumnos y sus buques"></button>
-    <button type="button" class="instr-tb" data-icono="dt" disabled title="Directed Targets: próximamente"></button>
-    <button type="button" class="instr-tb" data-icono="target" disabled title="Targets: próximamente"></button>
+    <button type="button" class="instr-tb" data-icono="dt" data-insertar="DT" title="Directed Target: click en la carta y arrastrá para darle rumbo y velocidad"></button>
+    <button type="button" class="instr-tb" data-icono="target" data-insertar="T" title="Target: click en cada waypoint de la derrota; doble click o Enter para terminar"></button>
     <button type="button" class="instr-tb" data-icono="lluvia" disabled title="Lluvias: no disponible todavía"></button>
     <button type="button" class="instr-tb" data-icono="boya" disabled title="Boyas: no disponible todavía"></button>
     <span class="instr-sep"></span>
@@ -97,6 +97,9 @@
             <legend>[ Objects ]</legend>
             <div class="instr-fila"><span>Own Ships:</span><span id="exCantOS">0</span>
               <label class="instr-check"><input type="checkbox" id="chkBuques" checked /> Display</label></div>
+            <div class="instr-fila"><span>Directed Targets:</span><span id="exCantDT">0</span></div>
+            <div class="instr-fila"><span>Targets:</span><span id="exCantT">0</span>
+              <label class="instr-check"><input type="checkbox" id="chkBlancos" checked /> Display</label></div>
           </fieldset>
         </div>
       </section>
@@ -113,6 +116,26 @@
             <button type="submit">Agregar</button>
             <p id="addAlumnoError" class="auth-error" hidden></p>
           </form>
+        </div>
+      </section>
+
+      <!-- Directed Targets: rumbo y velocidad que fija el profesor -->
+      <section class="instr-seccion" data-abierta="false" id="seccionDT">
+        <button type="button" class="instr-seccion-cab">Directed Targets</button>
+        <div class="instr-seccion-cuerpo">
+          <p class="instr-desc">Botón <b>DT</b> de la barra: click en la carta y arrastrá el vector (rumbo y velocidad). Corriendo, el blanco se acerca de a poco al rumbo y la velocidad nuevos; en pausa cambian al instante.</p>
+          <div id="listaDT" class="instr-os-lista"></div>
+        </div>
+      </section>
+
+      <!-- Targets: derrota de waypoints con velocidad por tramo -->
+      <section class="instr-seccion" data-abierta="false" id="seccionT">
+        <button type="button" class="instr-seccion-cab">Targets</button>
+        <div class="instr-seccion-cuerpo">
+          <p class="instr-desc">Botón <b>T</b> de la barra: click en cada waypoint; doble click o Enter para terminar. Se detiene al final de la derrota.</p>
+          <label class="instr-fila">Velocidad de los tramos nuevos:
+            <input type="number" id="velTramoNuevo" min="0.1" max="40" step="0.5" value="10" class="instr-num" /> kn</label>
+          <div id="listaT" class="instr-os-lista"></div>
         </div>
       </section>
 

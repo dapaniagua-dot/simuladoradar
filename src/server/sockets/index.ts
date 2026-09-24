@@ -21,6 +21,9 @@ import {
   type MensajePrivado,
   type CanalVHF,
   type PresenciaEstado,
+  type CrearBlancoPayload,
+  type ModificarBlancoPayload,
+  type WaypointDTO,
   type PresenciaEvento,
   type VistaCliente,
 } from '../../shared/types.js';
@@ -233,6 +236,33 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       io.to(roomDeSesion(ctx.sesionId)).emit('dm:message', mensaje);
     });
 
+    // ===== Blancos del instructor (DT y Targets) =====
+    // Solo el profesor / admin. Validamos números: el payload viene del navegador.
+    socket.on('blanco:crear', (p: CrearBlancoPayload) => {
+      if (ctx.role === 'alumno') return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo || (p?.tipo !== 'DT' && p?.tipo !== 'T')) return;
+      if (![p.lat, p.lon, p.rumbo, p.velKn].every(Number.isFinite)) return;
+      const waypoints = p.tipo === 'T' ? waypointsValidos(p.waypoints) : undefined;
+      if (p.tipo === 'T' && (!waypoints || waypoints.length < 2)) return;
+      mundo.agregarBlanco({ tipo: p.tipo, lat: p.lat, lon: p.lon, rumbo: p.rumbo, velKn: p.velKn, waypoints });
+    });
+    socket.on('blanco:modificar', (p: ModificarBlancoPayload) => {
+      if (ctx.role === 'alumno' || typeof p?.id !== 'string') return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo) return;
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+      const waypoints = p.waypoints ? waypointsValidos(p.waypoints) : undefined;
+      mundo.modificarBlanco({
+        id: p.id, rumbo: num(p.rumbo), velKn: num(p.velKn), lat: num(p.lat), lon: num(p.lon),
+        waypoints: waypoints && waypoints.length >= 2 ? waypoints : undefined,
+      });
+    });
+    socket.on('blanco:borrar', (p: { id?: unknown }) => {
+      if (ctx.role === 'alumno' || typeof p?.id !== 'string') return;
+      registry.obtener(ctx.sesionId)?.borrarBlanco(p.id);
+    });
+
     // Configuración del radar del alumno (escala, modo, EBL/VRM, blancos ARPA).
     // Se reenvía tal cual para que el profesor, con "Show Radar", vea el radar
     // exactamente como lo tiene el alumno. No se valida el contenido: solo lo
@@ -249,4 +279,14 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       cambiarPresencia(-1);
     });
   });
+}
+
+function waypointsValidos(ws: unknown): WaypointDTO[] | undefined {
+  if (!Array.isArray(ws) || ws.length > 50) return undefined;
+  const out: WaypointDTO[] = [];
+  for (const w of ws as WaypointDTO[]) {
+    if (![w?.lat, w?.lon, w?.velKn].every((v) => typeof v === 'number' && Number.isFinite(v))) return undefined;
+    out.push({ lat: w.lat, lon: w.lon, velKn: w.velKn });
+  }
+  return out;
 }

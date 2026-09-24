@@ -3,6 +3,9 @@
 // y se emite por WebSocket a los clientes conectados.
 
 import { MODELO_DEFAULT, type ModeloBuque } from './buques.js';
+import {
+  actualizarBlanco, crearBlanco, limitarVel, norm360, setDerrota, toBlancoDTO, type Blanco,
+} from './blancos.js';
 import type {
   EstadoBuqueDTO,
   EstadoAmbienteDTO,
@@ -12,6 +15,8 @@ import type {
   MensajeNavtex,
   MensajePrivado,
   PuntoTraza,
+  CrearBlancoPayload,
+  ModificarBlancoPayload,
 } from '../../shared/types.js';
 export type { TickPayload };
 
@@ -79,6 +84,9 @@ type TrazaFn = (ownshipIndex: number, punto: PuntoTraza) => void;
 export class Mundo {
   readonly sesionId: number;
   private buques = new Map<number, EstadoBuque>();
+  // Blancos del instructor. Viven en memoria mientras la sesión está abierta.
+  private blancos = new Map<string, Blanco>();
+  private contadorBlancos = { DT: 0, T: 0 };
   private timer: NodeJS.Timeout | null = null;
   private ultimoTick = Date.now();
   private pausado = false;
@@ -236,10 +244,56 @@ export class Mundo {
     };
   }
 
+  // ===== Blancos del instructor =====
+  agregarBlanco(p: CrearBlancoPayload): Blanco {
+    const numero = ++this.contadorBlancos[p.tipo];
+    const b = crearBlanco(p.tipo, numero, p);
+    this.blancos.set(b.id, b);
+    return b;
+  }
+
+  // Con la simulación en pausa los cambios son instantáneos; corriendo, el
+  // blanco tiende a los valores pedidos (manual del Melipal, 3.5.6).
+  modificarBlanco(p: ModificarBlancoPayload): boolean {
+    const b = this.blancos.get(p.id);
+    if (!b) return false;
+    if (p.lat !== undefined && p.lon !== undefined) {
+      b.lat = p.lat;
+      b.lon = p.lon;
+    }
+    if (p.rumbo !== undefined && b.tipo === 'DT') {
+      b.rumboPretendido = norm360(p.rumbo);
+      if (this.pausado) b.headingDeg = b.rumboPretendido;
+    }
+    if (p.velKn !== undefined && b.tipo === 'DT') {
+      b.velPretendida = limitarVel(p.velKn);
+      if (this.pausado) b.velocidadKn = b.velPretendida;
+    }
+    if (p.waypoints && b.tipo === 'T') {
+      // Solo cambian las velocidades de los tramos: el blanco sigue donde está.
+      const mismaDerrota = p.waypoints.length === b.waypoints.length
+        && p.waypoints.every((w, i) => w.lat === b.waypoints[i]!.lat && w.lon === b.waypoints[i]!.lon);
+      if (mismaDerrota) {
+        b.waypoints.forEach((w, i) => { w.velKn = Math.max(0.1, limitarVel(p.waypoints![i]!.velKn)); });
+        if (!b.terminado) b.velPretendida = b.waypoints[b.tramo]!.velKn;
+        if (this.pausado) b.velocidadKn = b.velPretendida;
+      } else {
+        setDerrota(b, p.waypoints);
+        if (this.pausado) b.velocidadKn = b.velPretendida;
+      }
+    }
+    return true;
+  }
+
+  borrarBlanco(id: string): boolean {
+    return this.blancos.delete(id);
+  }
+
   estadoActual(): TickPayload {
     return {
       t: Date.now(),
       buques: [...this.buques.values()].map(toDTO),
+      blancos: [...this.blancos.values()].map(toBlancoDTO),
       ambiente: { ...this.ambiente, utcTimestamp: Date.now() },
       pausado: this.pausado,
     };
@@ -258,6 +312,7 @@ export class Mundo {
     // En pausa no actualizamos la física pero seguimos emitiendo ticks para
     // que los clientes mantengan la conexión y reciban el estado congelado.
     if (!this.pausado) {
+      for (const bl of this.blancos.values()) actualizarBlanco(bl, dt);
       for (const b of this.buques.values()) {
         this.actualizarBuque(b, dt);
       }

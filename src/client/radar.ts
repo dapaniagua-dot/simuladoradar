@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import { PPI, ESCALAS_NM, ANILLOS_NM, esPeligroso, type PPIConfig, type PPIMode } from './radar/ppi.js';
-import { ArpaTracker, type DatosArpa } from './radar/arpa.js';
+import { ArpaTracker, type Contacto, type DatosArpa } from './radar/arpa.js';
 import { latLonAMillasRel } from './radar/coords.js';
 import type {
   CartaParseada,
@@ -24,7 +24,7 @@ interface AulaPayload {
 // Lo que el radar del alumno publica para que el profesor lo vea igual.
 interface EstadoRadar {
   config: PPIConfig;
-  arpa: number[]; // ownshipIndex de los blancos adquiridos
+  arpa: string[]; // id de los blancos adquiridos ("OS-2", "DT-1"…)
 }
 
 const titulo = document.querySelector('h1') as HTMLHeadingElement;
@@ -277,7 +277,7 @@ function publicarEstado(): void {
     return;
   }
   ultimoEnvio = Date.now();
-  const estado: EstadoRadar = { config, arpa: arpa.todos().map((b) => b.ownshipIndex) };
+  const estado: EstadoRadar = { config, arpa: arpa.todos().map((b) => b.id) };
   socket.emit('radar:estado', estado);
 }
 
@@ -285,8 +285,11 @@ function publicarEstado(): void {
 function aplicarEstadoAlumno(estado: EstadoRadar): void {
   Object.assign(config, estado.config);
   const seguidos = new Set(estado.arpa);
-  for (const b of arpa.todos()) if (!seguidos.has(b.ownshipIndex)) arpa.ceaseTrack(b.id);
-  for (const os of seguidos) arpa.adquirirOwnship(os);
+  for (const b of arpa.todos()) if (!seguidos.has(b.id)) arpa.ceaseTrack(b.id);
+  for (const id of seguidos) {
+    const c = contactos().find((x) => x.id === id);
+    arpa.adquirir({ id, etiqueta: c?.etiqueta ?? id });
+  }
   for (const [idSlider, idValor, campo] of [
     ['sliderGain', 'valGain', 'ganancia'], ['sliderTune', 'valTune', 'sintonia'], ['sliderSea', 'valSea', 'mar'],
   ] as const) {
@@ -389,9 +392,9 @@ function cablearPPI(): void {
     const p = polarDesdeMouse(e);
     if (!p || observando) return;
     if (modoClick === 'adquirir') {
-      const idx = buqueMasCercano(p.bearingTrue, p.distNm);
-      if (idx !== null) {
-        arpa.adquirirOwnship(idx);
+      const c = contactoMasCercano(p.bearingTrue, p.distNm);
+      if (c) {
+        arpa.adquirir(c);
         nuevoBlancoHasta = Date.now() + 5000;
       }
       publicarEstado();
@@ -400,8 +403,8 @@ function cablearPPI(): void {
       return;
     }
     if (modoClick === 'cesar') {
-      const idx = buqueMasCercano(p.bearingTrue, p.distNm);
-      if (idx !== null) arpa.ceaseTrack(`T-${idx}`);
+      const c = contactoMasCercano(p.bearingTrue, p.distNm);
+      if (c) arpa.ceaseTrack(c.id);
       modoClick = 'normal';
       refrescarPanel();
       return;
@@ -433,20 +436,21 @@ function cablearPPI(): void {
   });
 }
 
-// Buque (ownshipIndex) más cercano a un punto del PPI, a menos de ~15 px.
-function buqueMasCercano(bearingTrue: number, distNm: number): number | null {
+// Contacto (otro alumno o blanco del instructor) más cercano a un punto del
+// PPI, a menos de ~15 px.
+function contactoMasCercano(bearingTrue: number, distNm: number): Contacto | null {
   const mio = miBuque();
   if (!mio || !ppi) return null;
   const xE = Math.sin((bearingTrue * Math.PI) / 180) * distNm;
   const yN = Math.cos((bearingTrue * Math.PI) / 180) * distNm;
   const umbralNm = (15 / ppi.geometria().radio) * config.escalaNm;
-  let mejor: { idx: number; d: number } | null = null;
-  for (const b of otrosBuques()) {
+  let mejor: { c: Contacto; d: number } | null = null;
+  for (const b of contactos()) {
     const rel = latLonAMillasRel(b.lat, b.lon, mio.lat, mio.lon);
     const d = Math.hypot(rel.xE - xE, rel.yN - yN);
-    if (d < umbralNm && (!mejor || d < mejor.d)) mejor = { idx: b.ownshipIndex, d };
+    if (d < umbralNm && (!mejor || d < mejor.d)) mejor = { c: b, d };
   }
-  return mejor?.idx ?? null;
+  return mejor?.c ?? null;
 }
 
 // ----- Datos en vivo ----------------------------------------------------------
@@ -474,16 +478,17 @@ function conectarSocket(): void {
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
     // Blanco perdido: seguíamos un buque que ya no está en la sesión.
-    const presentes = new Set(payload.buques.map((b) => b.ownshipIndex));
+    const visibles = contactos();
+    const presentes = new Set(visibles.map((c) => c.id));
     for (const b of arpa.todos()) {
-      if (!presentes.has(b.ownshipIndex)) {
+      if (!presentes.has(b.id)) {
         arpa.ceaseTrack(b.id);
         blancoPerdido = true;
       }
     }
-    arpa.procesarTick(payload.t, payload.buques);
+    arpa.procesarTick(payload.t, visibles);
     const mio = miBuque();
-    if (mio) arpaTargets = arpa.evaluar(mio, payload.buques).sort((a, b) => a.ownshipIndex - b.ownshipIndex);
+    if (mio) arpaTargets = arpa.evaluar(mio, visibles).sort((a, b) => a.id.localeCompare(b.id, 'es', { numeric: true }));
     actualizarDatos();
   });
   socket.on('session:closed', () => {
@@ -506,9 +511,9 @@ function actualizarDatos(): void {
   // Tabla de blancos: los dos primeros seguidos.
   for (const col of [0, 1] as const) {
     const t = arpaTargets[col];
-    const b = t ? ultimoTick?.buques.find((x) => x.ownshipIndex === t.ownshipIndex) : undefined;
+    const b = t ? contactos().find((x) => x.id === t.id) : undefined;
     const set = (id: string, v: string) => { el(`b${col}${id}`).textContent = v; };
-    el(`blanco${col}Id`).textContent = t ? String(t.ownshipIndex) : '—';
+    el(`blanco${col}Id`).textContent = t ? t.etiqueta : '—';
     set('Lat', b ? formatDMS(b.lat, true) : '—');
     set('Lon', b ? formatDMS(b.lon, false) : '—');
     set('Brg', t ? `${t.bearingTrue.toFixed(1)}°` : '—');
@@ -535,13 +540,20 @@ function miBuque(): EstadoBuqueDTO | null {
   return ultimoTick.buques.find((b) => b.ownshipIndex === miOwnshipIndex) ?? null;
 }
 
-function otrosBuques(): EstadoBuqueDTO[] {
+// Todo lo que el radar ve además del buque propio: los buques de los otros
+// alumnos y los blancos del instructor (DT y Targets).
+function contactos(): Contacto[] {
   if (!ultimoTick) return [];
-  return ultimoTick.buques.filter((b) => b.ownshipIndex !== miOwnshipIndex);
+  const otros: Contacto[] = ultimoTick.buques
+    .filter((b) => b.ownshipIndex !== miOwnshipIndex)
+    .map((b) => ({ id: `OS-${b.ownshipIndex}`, etiqueta: String(b.ownshipIndex).padStart(2, '0'), lat: b.lat, lon: b.lon, headingDeg: b.headingDeg, velocidadKn: b.velocidadKn }));
+  const blancos: Contacto[] = (ultimoTick.blancos ?? [])
+    .map((b) => ({ id: b.id, etiqueta: b.id, lat: b.lat, lon: b.lon, headingDeg: b.headingDeg, velocidadKn: b.velocidadKn }));
+  return [...otros, ...blancos];
 }
 
 function loop(): void {
-  ppi?.draw(miBuque(), otrosBuques(), cartaCache, config, arpaTargets);
+  ppi?.draw(miBuque(), contactos(), cartaCache, config, arpaTargets);
   requestAnimationFrame(loop);
 }
 
