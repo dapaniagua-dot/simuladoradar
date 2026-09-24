@@ -25,8 +25,8 @@
 
   <div class="instr-barra" role="toolbar" aria-label="Herramientas del instructor">
     <button type="button" class="instr-tb" data-icono="nuevo" disabled title="Nueva sesión: desde Mis sesiones"></button>
-    <button type="button" class="instr-tb" data-icono="abrir" disabled title="Abrir ejercicio: no disponible todavía"></button>
-    <button type="button" class="instr-tb" data-icono="guardar" disabled title="Guardar ejercicio: no disponible todavía"></button>
+    <button type="button" class="instr-tb" data-icono="abrir" id="btnAbrirEj" title="Abrir ejercicio guardado (con la sesión abierta)"></button>
+    <button type="button" class="instr-tb" data-icono="guardar" id="btnGuardarEj" title="Guardar la situación actual como ejercicio (con la sesión abierta)"></button>
     <span class="instr-sep"></span>
     <button type="button" class="instr-tb" data-icono="play" id="btnPlay" title="Abrir / reanudar la simulación"></button>
     <button type="button" class="instr-tb" data-icono="pausa" id="btnPausa" title="Pausar la simulación"></button>
@@ -218,6 +218,38 @@
     <span id="estLocal">Local Time: —</span>
     <span id="estEvento" class="instr-estado-crece">Last Event:</span>
   </footer>
+
+  <!-- Guardar ejercicio -->
+  <dialog id="dlgGuardar" class="instr-dialogo">
+    <form method="dialog">
+      <h3>Guardar ejercicio</h3>
+      <label>Nombre
+        <input type="text" id="ejNombre" list="ejNombres" maxlength="255" required />
+      </label>
+      <datalist id="ejNombres"></datalist>
+      <label>Descripción
+        <textarea id="ejDesc" rows="3" maxlength="2000"></textarea>
+      </label>
+      <p class="instr-desc">Se guarda la posición y el rumbo actuales de cada buque propio y los blancos (DT y Targets). Si usás un nombre que ya existe, se reemplaza.</p>
+      <div class="instr-dlg-botones">
+        <button value="guardar">Guardar</button>
+        <button value="cancelar" formnovalidate>Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Abrir ejercicio -->
+  <dialog id="dlgAbrir" class="instr-dialogo instr-dialogo-ancho">
+    <form method="dialog">
+      <h3>Abrir ejercicio</h3>
+      <p class="instr-desc">Ejercicios guardados para esta carta. Al cargar uno se reemplazan los blancos y cada buque vuelve a su posición guardada, detenido.</p>
+      <table class="instr-tabla-ej">
+        <thead><tr><th>Nombre</th><th>Guardado</th><th>OS</th><th>Blancos</th><th></th></tr></thead>
+        <tbody id="listaEjercicios"></tbody>
+      </table>
+      <div class="instr-dlg-botones"><button value="cerrar">Cerrar</button></div>
+    </form>
+  </dialog>
 
   <script type="module" src="/sesion.ts"></script>
 </body>

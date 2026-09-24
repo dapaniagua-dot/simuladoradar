@@ -11,6 +11,7 @@ import { adminRouter } from './routes/admin.js';
 import { escenariosRouter } from './routes/escenarios.js';
 import { sesionesRouter } from './routes/sesiones.js';
 import { aulaRouter } from './routes/aula.js';
+import { ejerciciosRouter } from './routes/ejercicios.js';
 import { setupSockets } from './sockets/index.js';
 import { registry } from './simulacion/registry.js';
 
@@ -66,6 +67,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/escenarios', escenariosRouter);
 app.use('/api/sesiones', sesionesRouter);
 app.use('/api/aula', aulaRouter);
+app.use('/api/ejercicios', ejerciciosRouter);
 
 // /public se sirve siempre (cartas náuticas y cualquier asset estático).
 const publicDir = path.resolve(__dirname, '../../public');

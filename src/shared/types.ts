@@ -354,3 +354,25 @@ export interface CartaParseada {
   esquinaSE: CartaCoord;
   segmentos: CartaSegmento[];
 }
+
+// =============================================================================
+// Ejercicios guardados
+// =============================================================================
+
+// Situación que se guarda y se vuelve a cargar: dónde está cada buque propio
+// (por número de OS) y los blancos del instructor.
+export interface DatosEjercicio {
+  version: 1;
+  buques: { ownshipIndex: number; lat: number; lon: number; headingDeg: number }[];
+  blancos: CrearBlancoPayload[];
+}
+
+export interface EjercicioResumen {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+  escenarioId: number;
+  cantBuques: number;
+  cantBlancos: number;
+  updatedAt: string;
+}

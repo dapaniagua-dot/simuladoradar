@@ -17,6 +17,7 @@ import type {
   MensajePrivado,
   PuntoTraza,
   FallasBuque,
+  DatosEjercicio,
   CrearBlancoPayload,
   ModificarBlancoPayload,
 } from '../../shared/types.js';
@@ -321,6 +322,53 @@ export class Mundo {
 
   borrarBlanco(id: string): boolean {
     return this.blancos.delete(id);
+  }
+
+  // ===== Ejercicios guardados =====
+  // Foto de la situación actual para guardarla como ejercicio.
+  exportarEjercicio(): DatosEjercicio {
+    return {
+      version: 1,
+      buques: [...this.buques.values()].map((b) => ({
+        ownshipIndex: b.ownshipIndex, lat: b.lat, lon: b.lon, headingDeg: b.headingDeg,
+      })),
+      blancos: [...this.blancos.values()].map((b) => (b.tipo === 'T'
+        ? { tipo: 'T', lat: b.lat, lon: b.lon, rumbo: b.headingDeg, velKn: b.velPretendida, waypoints: b.waypoints.map((w) => ({ ...w })) }
+        : { tipo: 'DT', lat: b.lat, lon: b.lon, rumbo: b.rumboPretendido, velKn: b.velPretendida })),
+    };
+  }
+
+  // Carga un ejercicio: reemplaza los blancos y lleva cada buque propio a su
+  // posición guardada, detenido y con los comandos en cero (arranca de nuevo).
+  cargarEjercicio(datos: DatosEjercicio): void {
+    this.blancos.clear();
+    this.contadorBlancos = { DT: 0, T: 0 };
+    for (const b of datos.blancos) this.agregarBlanco(b);
+    const ahora = Date.now();
+    for (const pos of datos.buques) {
+      const b = this.buques.get(pos.ownshipIndex);
+      if (!b) continue;
+      Object.assign(b, {
+        lat: pos.lat,
+        lon: pos.lon,
+        headingDeg: pos.headingDeg,
+        prevHeadingDeg: pos.headingDeg,
+        velocidadKn: 0,
+        turnRateDegPerMin: 0,
+        telegrafoBabor: 'STOP',
+        telegrafoEstribor: 'STOP',
+        giroDiferencialDegPerSec: 0,
+        rudderCommandDeg: 0,
+        rudderAngleDeg: 0,
+        autopilotOn: false,
+        setCourseDeg: pos.headingDeg,
+        distanceTotalNm: 0,
+        tripStartedAt: ahora,
+        fallas: { ...SIN_FALLAS },
+        giroCongeladoDeg: pos.headingDeg,
+        traza: [{ t: ahora, lat: pos.lat, lon: pos.lon }],
+      });
+    }
   }
 
   estadoActual(): TickPayload {

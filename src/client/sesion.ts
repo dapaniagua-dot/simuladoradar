@@ -18,6 +18,8 @@ import type {
   TickPayload,
   TrazaPuntoPayload,
   WaypointDTO,
+  DatosEjercicio,
+  EjercicioResumen,
 } from '../shared/types.js';
 
 const titulo = el<HTMLElement>('sesionTitulo');
@@ -105,6 +107,9 @@ function refrescarEstado(): void {
   btnPlay.disabled = !(estado === 'preparada' || (abierta && pausado));
   btnPausa.disabled = !(abierta && !pausado);
   btnStop.disabled = !abierta;
+  // Guardar / abrir ejercicio trabajan sobre la simulación en curso.
+  el<HTMLButtonElement>('btnGuardarEj').disabled = !abierta;
+  el<HTMLButtonElement>('btnAbrirEj').disabled = !abierta;
   pintarBarra();
 
   const sim = el('simEstado');
@@ -179,6 +184,7 @@ function conectarSocket(): void {
   });
   socket.on('traza:snapshot', (porBuque: Record<number, PuntoTraza[]>) => cartaVista?.setTrazas(porBuque));
   socket.on('traza:punto', (p: TrazaPuntoPayload) => cartaVista?.agregarPunto(p.ownshipIndex, p.punto));
+  socket.on('traza:reinicio', () => cartaVista?.setTrazas({}));
   socket.on('session:closed', () => {
     socket?.disconnect();
     socket = null;
@@ -279,6 +285,9 @@ function cablearInterfaz(): void {
   });
 
   el('modoUbicarCancelar').addEventListener('click', cancelarUbicar);
+  el('btnGuardarEj').addEventListener('click', () => void abrirDialogoGuardar());
+  el('btnAbrirEj').addEventListener('click', () => void abrirDialogoAbrir());
+  el<HTMLDialogElement>('dlgGuardar').addEventListener('close', () => void guardarEjercicio());
   el('btnLimpiarEventos').addEventListener('click', () => { el('registroEventos').innerHTML = ''; });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && cartaVista?.estaUbicando()) cancelarUbicar();
@@ -850,6 +859,102 @@ function armarListaT(ts: BlancoDTO[]): void {
 function distanciaNm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const xE = (b.lon - a.lon) * 60 * Math.cos((a.lat * Math.PI) / 180);
   return Math.hypot(xE, (b.lat - a.lat) * 60);
+}
+
+// ----- Ejercicios guardados ("guardar / abrir" del Melipal) ---------------------------
+let ejerciciosCache: EjercicioResumen[] = [];
+
+async function listarEjercicios(): Promise<EjercicioResumen[]> {
+  if (!sesion) return [];
+  const res = await fetch(`/api/ejercicios?escenarioId=${sesion.escenarioId}`, { credentials: 'include' });
+  if (!res.ok) return [];
+  ejerciciosCache = ((await res.json()) as { ejercicios: EjercicioResumen[] }).ejercicios;
+  return ejerciciosCache;
+}
+
+async function abrirDialogoGuardar(): Promise<void> {
+  const lista = await listarEjercicios();
+  el('ejNombres').innerHTML = lista.map((e) => `<option value="${escape(e.nombre)}"></option>`).join('');
+  el<HTMLInputElement>('ejNombre').value = '';
+  el<HTMLTextAreaElement>('ejDesc').value = '';
+  const dlg = el<HTMLDialogElement>('dlgGuardar');
+  dlg.returnValue = '';
+  dlg.showModal();
+}
+
+// Pide al server la foto de la situación actual y la guarda (o reemplaza la
+// del mismo nombre).
+async function guardarEjercicio(): Promise<void> {
+  const dlg = el<HTMLDialogElement>('dlgGuardar');
+  if (dlg.returnValue !== 'guardar' || !sesion || !socket) return;
+  const nombre = el<HTMLInputElement>('ejNombre').value.trim();
+  const descripcion = el<HTMLTextAreaElement>('ejDesc').value.trim();
+  if (!nombre) return;
+  const datos = await new Promise<DatosEjercicio | null>((resolve) => {
+    socket!.timeout(5000).emit('ejercicio:exportar', null, (err: Error | null, d: DatosEjercicio | null) => resolve(err ? null : d));
+  });
+  if (!datos) {
+    alert('No se pudo leer la situación actual de la simulación.');
+    return;
+  }
+  const existente = ejerciciosCache.find((e) => e.nombre.toLowerCase() === nombre.toLowerCase());
+  if (existente && !confirm(`Ya hay un ejercicio "${existente.nombre}". ¿Reemplazarlo?`)) return;
+  const res = await fetch(existente ? `/api/ejercicios/${existente.id}` : '/api/ejercicios', {
+    method: existente ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ nombre, descripcion: descripcion || null, escenarioId: sesion.escenarioId, datos }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as ApiError;
+    alert(err.error ?? 'No se pudo guardar el ejercicio');
+    return;
+  }
+  registrarEvento(`Ejercicio "${nombre}" guardado (${datos.buques.length} OS, ${datos.blancos.length} blancos)`);
+}
+
+async function abrirDialogoAbrir(): Promise<void> {
+  const lista = await listarEjercicios();
+  const cuerpo = el('listaEjercicios');
+  cuerpo.innerHTML = lista.length === 0
+    ? '<tr><td colspan="5" class="instr-desc">Todavía no guardaste ejercicios para esta carta.</td></tr>'
+    : lista.map((e) => `
+      <tr data-id="${e.id}">
+        <td title="${escape(e.descripcion ?? '')}"><strong>${escape(e.nombre)}</strong>${e.descripcion ? `<br /><small>${escape(e.descripcion)}</small>` : ''}</td>
+        <td>${new Date(e.updatedAt).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+        <td>${e.cantBuques}</td>
+        <td>${e.cantBlancos}</td>
+        <td class="instr-tabla-acciones">
+          <button type="button" data-cargar>Cargar</button>
+          <button type="button" data-borrar>Borrar</button>
+        </td>
+      </tr>`).join('');
+  for (const fila of cuerpo.querySelectorAll<HTMLTableRowElement>('tr[data-id]')) {
+    const id = Number(fila.dataset.id);
+    const ej = lista.find((e) => e.id === id)!;
+    fila.querySelector('[data-cargar]')!.addEventListener('click', () => void cargarEjercicio(ej));
+    fila.querySelector('[data-borrar]')!.addEventListener('click', async () => {
+      if (!confirm(`¿Borrar el ejercicio "${ej.nombre}"? No se puede deshacer.`)) return;
+      await fetch(`/api/ejercicios/${id}`, { method: 'DELETE', credentials: 'include' });
+      registrarEvento(`Ejercicio "${ej.nombre}" borrado`);
+      void abrirDialogoAbrir();
+    });
+  }
+  const dlg = el<HTMLDialogElement>('dlgAbrir');
+  if (!dlg.open) dlg.showModal();
+}
+
+async function cargarEjercicio(ej: EjercicioResumen): Promise<void> {
+  if (!confirm(`¿Cargar "${ej.nombre}"? Se reemplazan los blancos actuales y cada buque vuelve a su posición guardada, detenido.`)) return;
+  const res = await fetch(`/api/ejercicios/${ej.id}`, { credentials: 'include' });
+  if (!res.ok) {
+    alert('No se pudo leer el ejercicio');
+    return;
+  }
+  const { ejercicio } = (await res.json()) as { ejercicio: EjercicioResumen & { datos: DatosEjercicio } };
+  socket?.emit('ejercicio:cargar', ejercicio.datos);
+  el<HTMLDialogElement>('dlgAbrir').close();
+  registrarEvento(`Ejercicio "${ej.nombre}" cargado`);
 }
 
 // ----- Relojes y eventos ------------------------------------------------------------

@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { sesiones, participaciones, users } from '../db/schema.js';
 import { registry, roomDeSesion } from '../simulacion/registry.js';
+import { datosEjercicioSchema } from '../routes/ejercicios.js';
 import {
   CANALES_VHF,
   TELEGRAFO_IDS,
@@ -209,6 +210,23 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number' || typeof p.tomar !== 'boolean') return;
       registry.obtener(ctx.sesionId)?.setControlInstructor(p.ownshipIndex, p.tomar);
     });
+    // ===== Ejercicios guardados =====
+    // Foto de la situación actual (el instructor la guarda por la API).
+    socket.on('ejercicio:exportar', (_: unknown, responder?: (datos: unknown) => void) => {
+      if (ctx.role === 'alumno' || typeof responder !== 'function') return;
+      responder(registry.obtener(ctx.sesionId)?.exportarEjercicio() ?? null);
+    });
+    // Cargar un ejercicio en la sesión en curso. Los recorridos arrancan de
+    // cero, así que se avisa a todos para que limpien los suyos.
+    socket.on('ejercicio:cargar', (p: unknown) => {
+      if (ctx.role === 'alumno') return;
+      const mundo = registry.obtener(ctx.sesionId);
+      const parsed = datosEjercicioSchema.safeParse(p);
+      if (!mundo || !parsed.success) return;
+      mundo.cargarEjercicio(parsed.data);
+      io.to(room).emit('traza:reinicio');
+    });
+
     // "Lose ARPA Targets": el radar de ese alumno suelta todos sus blancos.
     socket.on('radar:perder-arpa', (p: { ownshipIndex?: unknown }) => {
       if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number') return;

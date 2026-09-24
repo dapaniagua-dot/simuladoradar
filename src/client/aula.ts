@@ -391,6 +391,8 @@ function conectarSocket(): void {
   socket.on('traza:snapshot', (porBuque: Record<number, PuntoTraza[]>) => {
     navegador?.setTraza(porBuque[miOwnshipIndex] ?? []);
   });
+  // Se cargó un ejercicio: los recorridos arrancan de cero.
+  socket.on('traza:reinicio', () => navegador?.setTraza([]));
   socket.on('traza:punto', (p: TrazaPuntoPayload) => {
     if (p.ownshipIndex === miOwnshipIndex) navegador?.agregarPunto(p.punto);
   });
