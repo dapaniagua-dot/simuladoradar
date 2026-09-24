@@ -20,6 +20,9 @@ import {
   type MensajeNavtex,
   type MensajePrivado,
   type CanalVHF,
+  type PresenciaEstado,
+  type PresenciaEvento,
+  type VistaCliente,
 } from '../../shared/types.js';
 
 // Contexto que cada conexión socket tiene asociado tras autenticar.
@@ -29,6 +32,20 @@ interface SocketCtx {
   sesionId: number;
   ownshipIndex?: number; // sólo para alumnos
   nombre: string;
+  vista: VistaCliente;
+}
+
+// Pantallas abiertas por cada alumno, por sesión. Solo cuentan los alumnos
+// (el profesor observando el radar de un alumno no lo "conecta").
+const presencia = new Map<number, PresenciaEstado>();
+
+function presenciaDe(sesionId: number): PresenciaEstado {
+  let p = presencia.get(sesionId);
+  if (!p) {
+    p = {};
+    presencia.set(sesionId, p);
+  }
+  return p;
 }
 
 export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandler): void {
@@ -45,7 +62,7 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       if (!userId) return next(new Error('No autenticado'));
 
       // ¿A qué sesión querés conectarte? Lo pasamos por handshake auth.
-      const auth = socket.handshake.auth as { sesionId?: number };
+      const auth = socket.handshake.auth as { sesionId?: number; vista?: string };
       const sesionId = Number(auth.sesionId);
       if (!Number.isFinite(sesionId) || sesionId <= 0) {
         return next(new Error('Falta sesionId en el handshake'));
@@ -67,6 +84,7 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
         role: user.role as SocketCtx['role'],
         sesionId,
         nombre: user.nombre,
+        vista: auth.vista === 'radar' || auth.vista === 'instructor' ? auth.vista : 'aula',
       };
 
       if (user.role === 'admin') {
@@ -115,6 +133,21 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       socket.emit('chat:snapshot', mundo.snapshotMensajes(ctx.userId));
       socket.emit('traza:snapshot', mundo.snapshotTrazas(ctx.role === 'alumno' ? ctx.ownshipIndex : undefined));
     }
+
+    // Presencia: el instructor ve qué alumnos tienen abierta el aula / el radar.
+    const cambiarPresencia = (delta: 1 | -1) => {
+      if (ctx.role !== 'alumno' || ctx.ownshipIndex === undefined || ctx.vista === 'instructor') return;
+      const p = presenciaDe(ctx.sesionId);
+      const os = (p[ctx.ownshipIndex] ??= { aula: 0, radar: 0 });
+      os[ctx.vista] = Math.max(0, os[ctx.vista] + delta);
+      const evento: PresenciaEvento = {
+        ownshipIndex: ctx.ownshipIndex, nombre: ctx.nombre, vista: ctx.vista, conectado: delta > 0, ts: Date.now(),
+      };
+      io.to(room).emit('presencia:estado', p);
+      io.to(room).emit('presencia:evento', evento);
+    };
+    cambiarPresencia(1);
+    if (ctx.role !== 'alumno') socket.emit('presencia:estado', presenciaDe(ctx.sesionId));
 
     // Eventos del cliente
     socket.on('ship:control', (payload: ShipControlPayload) => {
@@ -200,8 +233,20 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       io.to(roomDeSesion(ctx.sesionId)).emit('dm:message', mensaje);
     });
 
+    // Configuración del radar del alumno (escala, modo, EBL/VRM, blancos ARPA).
+    // Se reenvía tal cual para que el profesor, con "Show Radar", vea el radar
+    // exactamente como lo tiene el alumno. No se valida el contenido: solo lo
+    // usa la pantalla del observador para dibujar.
+    socket.on('radar:estado', (estado: unknown) => {
+      if (ctx.role !== 'alumno' || ctx.ownshipIndex === undefined) return;
+      if (JSON.stringify(estado ?? null).length > 4000) return;
+      io.to(room).emit('radar:estado', { ownshipIndex: ctx.ownshipIndex, estado });
+    });
+
     socket.on('disconnect', () => {
-      // No-op; el alumno puede reconectarse y el Mundo sigue vivo en el server.
+      // El alumno puede reconectarse y el Mundo sigue vivo en el server; solo
+      // actualizamos la presencia.
+      cambiarPresencia(-1);
     });
   });
 }

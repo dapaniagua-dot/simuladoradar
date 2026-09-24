@@ -116,6 +116,22 @@
         </div>
       </section>
 
+      <!-- Connections: quién está conectado, radar observado y registro de eventos -->
+      <section class="instr-seccion" data-abierta="false" id="seccionConexiones">
+        <button type="button" class="instr-seccion-cab">Connections</button>
+        <div class="instr-seccion-cuerpo">
+          <fieldset>
+            <legend>[ Instructor Radar ]</legend>
+            <div class="instr-fila"><span>Seeing Radar from Post:</span><span id="radarObservado">NONE</span></div>
+          </fieldset>
+          <fieldset>
+            <legend>[ Events Log ]</legend>
+            <ol id="registroEventos" class="instr-eventos"></ol>
+            <button type="button" id="btnLimpiarEventos" class="instr-btn-chico">Clear Event Log</button>
+          </fieldset>
+        </div>
+      </section>
+
       <!-- VHF / Navtex / mensajes -->
       <section class="instr-seccion" data-abierta="false" id="commPanel">
         <button type="button" class="instr-seccion-cab">VHF</button>

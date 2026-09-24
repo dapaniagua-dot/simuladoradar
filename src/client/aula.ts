@@ -25,6 +25,7 @@ interface AulaPayload {
     ownshipIndex: number;
   };
   carta: CartaParseada;
+  observador?: { alumnoNombre: string };
 }
 
 // ----- DOM refs --------------------------------------------------------------
@@ -85,6 +86,9 @@ const vhfLcdInfo = el<HTMLDivElement>('vhfLcdInfo');
 let sesionId = 0;
 let miOwnshipIndex = 0;
 let navegador: Navegador | null = null;
+// Modo observador: el profesor ve en vivo el aula de un alumno ("Show Console"),
+// sin poder operar su buque.
+let observando = false;
 let ultimoTick: TickPayload | null = null;
 let socket: Socket | null = null;
 let telegrafo: Telegrafo | null = null;
@@ -118,34 +122,40 @@ async function init(): Promise<void> {
     return;
   }
   const { user } = (await meRes.json()) as LoginResponse;
-  if (user.role !== 'alumno') {
+  const params = new URLSearchParams(location.search);
+  observando = user.role !== 'alumno' && params.get('observar') !== null;
+  if (user.role !== 'alumno' && !observando) {
     location.href = '/dashboard.html';
     return;
   }
   userId = user.id;
   userBadge.textContent = `${user.nombre} (${user.role})`;
 
-  const params = new URLSearchParams(location.search);
   sesionId = Number(params.get('sesion'));
   if (!Number.isFinite(sesionId) || sesionId <= 0) {
     showError('Falta el ID de la sesión en la URL');
     return;
   }
 
-  const res = await fetch(`/api/aula/${sesionId}`, { credentials: 'include' });
+  const consulta = observando ? `?observar=${Number(params.get('observar'))}` : '';
+  const res = await fetch(`/api/aula/${sesionId}${consulta}`, { credentials: 'include' });
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { error?: string };
     showError(err.error ?? 'No se pudo entrar a la sesión');
     return;
   }
-  const { sesion, carta } = (await res.json()) as AulaPayload;
+  const { sesion, carta, observador } = (await res.json()) as AulaPayload;
   miOwnshipIndex = sesion.ownshipIndex;
 
   // El radar corre en su propia página (con su propio socket), embebida en
   // modo compacto. Solo la cargamos cuando sabemos que el alumno tiene acceso.
-  radarFrame.src = `/radar.html?sesion=${sesionId}&embebido=1`;
+  radarFrame.src = `/radar.html?sesion=${sesionId}&embebido=1${consulta.replace('?', '&')}`;
 
-  titulo.textContent = sesion.nombre;
+  titulo.textContent = observador ? `${sesion.nombre} — ${observador.alumnoNombre} (solo lectura)` : sesion.nombre;
+  if (observando) {
+    document.body.classList.add('observando');
+    document.title = `Aula OS-${sesion.ownshipIndex} — ${observador?.alumnoNombre ?? ''}`;
+  }
   ownshipBadge.textContent = `OS-${sesion.ownshipIndex}`;
   ownshipBadge.classList.add('badge-abierta');
 
@@ -236,6 +246,7 @@ function cablearControles(): void {
   // Atajo de teclado: flechas izquierda/derecha = 5° a babor/estribor, salvo
   // que el alumno esté escribiendo en un campo.
   window.addEventListener('keydown', (e) => {
+    if (observando) return;
     const t = e.target as HTMLElement;
     if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -314,7 +325,7 @@ function formatRumbo(deg: number): string {
 }
 
 function conectarSocket(): void {
-  socket = io({ auth: { sesionId }, withCredentials: true });
+  socket = io({ auth: { sesionId, vista: 'aula' }, withCredentials: true });
   socket.on('connect', () => {
     connBadge.textContent = 'conectado';
     connBadge.className = 'badge badge-abierta';
@@ -821,8 +832,10 @@ function seleccionarPrincipal(principal: Vista): void {
 for (const btn of document.querySelectorAll<HTMLButtonElement>('.btn-vista, .btn-agrandar')) {
   btn.addEventListener('click', () => seleccionarPrincipal(btn.dataset.vista as Vista));
 }
-// Por pedido de Diego, al entrar al aula el radar siempre arranca grande.
-seleccionarPrincipal('radar');
+// Por pedido de Diego, al entrar al aula el radar siempre arranca grande. El
+// instructor puede pedir otra vista con ?principal= (su "Show Console").
+const principalPedida = new URLSearchParams(location.search).get('principal') as Vista | null;
+seleccionarPrincipal(principalPedida && VISTAS.includes(principalPedida) ? principalPedida : 'radar');
 
 // Al cambiar de vista los paneles cambian de tamaño sin que cambie la ventana,
 // por eso observamos los contenedores en vez de escuchar window.resize. El

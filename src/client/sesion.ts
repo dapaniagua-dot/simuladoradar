@@ -10,6 +10,8 @@ import type {
   MensajeVHF,
   Participacion,
   PublicUser,
+  PresenciaEstado,
+  PresenciaEvento,
   PuntoTraza,
   Sesion,
   TickPayload,
@@ -40,6 +42,11 @@ const mensajesVHF: MensajeVHF[] = [];
 const mensajesNavtex: MensajeNavtex[] = [];
 const mensajesPrivados: MensajePrivado[] = [];
 let participacionesActuales: Participacion[] = [];
+let presencia: PresenciaEstado = {};
+// Ventanas de "Show Radar" / "Show Console": una de cada una, se reutilizan al
+// elegir otro alumno (como la PC de radar del instructor en el Melipal).
+let ventanaRadar: Window | null = null;
+let radarObservado: number | null = null;
 
 async function init(): Promise<void> {
   const me = await fetch('/api/auth/me', { credentials: 'include' });
@@ -141,7 +148,7 @@ btnStop.addEventListener('click', async () => {
 
 // ----- Socket ----------------------------------------------------------------
 function conectarSocket(): void {
-  socket = io({ auth: { sesionId }, withCredentials: true });
+  socket = io({ auth: { sesionId, vista: 'instructor' }, withCredentials: true });
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
     if (payload.pausado !== pausado) {
@@ -151,6 +158,14 @@ function conectarSocket(): void {
     cartaVista?.setBuques(payload.buques);
     refrescarMatriz();
     refrescarDatosOS();
+  });
+  socket.on('presencia:estado', (p: PresenciaEstado) => {
+    presencia = p;
+    refrescarPresencia();
+  });
+  socket.on('presencia:evento', (e: PresenciaEvento) => {
+    const os = `OS-${String(e.ownshipIndex).padStart(2, '0')}`;
+    registrarEvento(`${os} ${e.nombre}: ${e.vista === 'radar' ? 'radar' : 'aula'} ${e.conectado ? 'conectado' : 'desconectado'}`, e.ts);
   });
   socket.on('traza:snapshot', (porBuque: Record<number, PuntoTraza[]>) => cartaVista?.setTrazas(porBuque));
   socket.on('traza:punto', (p: TrazaPuntoPayload) => cartaVista?.agregarPunto(p.ownshipIndex, p.punto));
@@ -227,6 +242,7 @@ function cablearInterfaz(): void {
   });
 
   el('modoUbicarCancelar').addEventListener('click', cancelarUbicar);
+  el('btnLimpiarEventos').addEventListener('click', () => { el('registroEventos').innerHTML = ''; });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && cartaVista?.estaUbicando()) cancelarUbicar();
   });
@@ -326,6 +342,12 @@ async function loadParticipaciones(): Promise<void> {
         ${puedeQuitar ? `<button type="button" class="instr-btn-chico" data-quitar title="Quitar de la sesión">✕</button>` : ''}
       </div>
       <div class="instr-os-datos" data-vivo>${editable ? (tienePos ? 'Posición inicial fijada' : 'Posición automática') : '—'}</div>
+      ${sesion?.estado === 'abierta' ? `
+      <div class="instr-os-vivo">
+        <span class="instr-conexion" data-conexion>Aula <b data-aula>NO</b> · Radar <b data-radar>NO</b></span>
+        <button type="button" data-ver-radar title="Ver en vivo el radar de este alumno">Show Radar</button>
+        <button type="button" data-ver-consola title="Ver en vivo el aula (consola, radar y carta) de este alumno">Show Console</button>
+      </div>` : ''}
       ${editable ? `
       <div class="instr-os-pos">
         <label>LAT <input type="number" step="0.0001" data-lat value="${p.latInicial ?? ''}" /></label>
@@ -348,6 +370,8 @@ async function loadParticipaciones(): Promise<void> {
       await Promise.all([loadParticipaciones(), loadAlumnosDisponibles()]);
     });
     row.querySelector('[data-ubicar]')?.addEventListener('click', () => iniciarUbicar(p));
+    row.querySelector('[data-ver-radar]')?.addEventListener('click', () => verRadar(p));
+    row.querySelector('[data-ver-consola]')?.addEventListener('click', () => verConsola(p));
     row.querySelector('[data-guardar]')?.addEventListener('click', async () => {
       const num = (sel: string) => Number(row.querySelector<HTMLInputElement>(sel)!.value);
       const [lat, lon, hdg] = [num('[data-lat]'), num('[data-lon]'), num('[data-hdg]')];
@@ -365,6 +389,44 @@ async function loadParticipaciones(): Promise<void> {
     alumnosLista.appendChild(row);
   }
   cartaVista?.onSeleccion(cartaVista.seleccionado);
+  refrescarPresencia();
+}
+
+// ----- Show Radar / Show Console --------------------------------------------------
+function verRadar(p: Participacion): void {
+  const url = `/radar.html?sesion=${sesionId}&observar=${p.ownshipIndex}`;
+  ventanaRadar = window.open(url, 'melipal-radar-instructor', 'width=1280,height=900');
+  radarObservado = p.ownshipIndex;
+  el('radarObservado').textContent = `OS-${String(p.ownshipIndex).padStart(2, '0')} · ${p.alumnoNombre}`;
+  registrarEvento(`Show Radar OS-${String(p.ownshipIndex).padStart(2, '0')}`);
+}
+
+function verConsola(p: Participacion): void {
+  const url = `/aula.html?sesion=${sesionId}&observar=${p.ownshipIndex}&principal=consola`;
+  window.open(url, 'melipal-aula-instructor', 'width=1500,height=950');
+  registrarEvento(`Show Console OS-${String(p.ownshipIndex).padStart(2, '0')}`);
+}
+
+// Si el profesor cierra la ventana del radar, "Seeing Radar from Post" vuelve a NONE.
+setInterval(() => {
+  if (radarObservado !== null && ventanaRadar?.closed) {
+    radarObservado = null;
+    el('radarObservado').textContent = 'NONE';
+  }
+}, 1000);
+
+function refrescarPresencia(): void {
+  for (const row of alumnosLista.querySelectorAll<HTMLElement>('.instr-os')) {
+    const p = presencia[Number(row.dataset.os)];
+    const pintar = (sel: string, n: number) => {
+      const b = row.querySelector<HTMLElement>(sel);
+      if (!b) return;
+      b.textContent = n > 0 ? 'SÍ' : 'NO';
+      b.dataset.conectado = String(n > 0);
+    };
+    pintar('[data-aula]', p?.aula ?? 0);
+    pintar('[data-radar]', p?.radar ?? 0);
+  }
 }
 
 // Datos en vivo de cada buque en su fila (rumbo, velocidad, máquinas, timón).
@@ -507,8 +569,14 @@ function actualizarRelojes(): void {
   el('estElapsed').textContent = `Elapsed Time: ${elapsed}`;
 }
 
-function registrarEvento(texto: string): void {
-  el('estEvento').textContent = `Last Event: ${formatHora(Date.now())} ${texto}`;
+function registrarEvento(texto: string, ts = Date.now()): void {
+  el('estEvento').textContent = `Last Event: ${formatHora(ts)} ${texto}`;
+  const lista = el<HTMLOListElement>('registroEventos');
+  const li = document.createElement('li');
+  li.textContent = `${formatHora(ts)} ${texto}`;
+  lista.appendChild(li);
+  while (lista.children.length > 200) lista.firstElementChild!.remove();
+  lista.scrollTop = lista.scrollHeight;
 }
 
 // ----- Comunicaciones -----------------------------------------------------------

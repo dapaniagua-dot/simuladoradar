@@ -168,6 +168,25 @@ export interface TrazaPuntoPayload {
   punto: PuntoTraza;
 }
 
+// Qué pantalla abrió un cliente al conectarse por socket.
+export type VistaCliente = 'aula' | 'radar' | 'instructor';
+
+// Cuántas pantallas tiene abiertas cada alumno (por ownshipIndex). Lo usa el
+// instructor para mostrar si el alumno está conectado.
+export interface PresenciaOS {
+  aula: number;
+  radar: number;
+}
+export type PresenciaEstado = Record<number, PresenciaOS>;
+
+export interface PresenciaEvento {
+  ownshipIndex: number;
+  nombre: string;
+  vista: 'aula' | 'radar';
+  conectado: boolean;
+  ts: number;
+}
+
 export interface TickPayload {
   t: number;
   buques: EstadoBuqueDTO[];
