@@ -36,6 +36,9 @@ export interface ModeloBuque {
   tauVelocidad: number;
   // Tasa máxima de giro a timón completo, en grados/segundo
   maxTurnRateDegPerSec: number;
+  // Tasa de giro por empuje diferencial de las dos hélices (una Full Ahead y
+  // la otra Full Astern), en grados/segundo. Provisorio hasta la calibración.
+  maxTurnRateDiferencialDegPerSec: number;
 }
 
 export const M140: ModeloBuque = {
@@ -47,21 +50,25 @@ export const M140: ModeloBuque = {
   velMaxKn: 27.5,
   velMinKn: -4.4,
   maxRudderDeg: 35,
-  // Velocidades objetivo derivadas de las posiciones del telégrafo del M140
-  // tomadas del fleet.cfg (RPM máx ahead = 400, full astern = -400).
+  // Posiciones del telégrafo del M140. Las RPM son las del fleet.cfg
+  // (400/320/250/150/60 avante, -60/-150/-250/-400 atrás); las velocidades
+  // son las que ya veníamos usando, con las dos máquinas en la misma posición.
+  // MAN (320 RPM, entre Full y Half): con velocidad ∝ RPM da 27.5 × 320/400 = 22 kn.
   telegrafo: [
-    { id: 'FAS',  nombre: 'Full Astern',      velObjetivoKn: -4.4 },
-    { id: 'HAS',  nombre: 'Half Astern',      velObjetivoKn: -3.0 },
-    { id: 'SAS',  nombre: 'Slow Astern',      velObjetivoKn: -2.0 },
-    { id: 'DSAS', nombre: 'Dead Slow Astern', velObjetivoKn: -1.0 },
-    { id: 'STOP', nombre: 'Stop',             velObjetivoKn: 0    },
-    { id: 'DSAH', nombre: 'Dead Slow Ahead',  velObjetivoKn: 5    },
-    { id: 'SAH',  nombre: 'Slow Ahead',       velObjetivoKn: 10   },
-    { id: 'HAH',  nombre: 'Half Ahead',       velObjetivoKn: 18   },
-    { id: 'FAH',  nombre: 'Full Ahead',       velObjetivoKn: 27.5 },
+    { id: 'FAS',  nombre: 'Full Astern',      rpm: -400, velObjetivoKn: -4.4 },
+    { id: 'HAS',  nombre: 'Half Astern',      rpm: -250, velObjetivoKn: -3.0 },
+    { id: 'SAS',  nombre: 'Slow Astern',      rpm: -150, velObjetivoKn: -2.0 },
+    { id: 'DSAS', nombre: 'Dead Slow Astern', rpm: -60,  velObjetivoKn: -1.0 },
+    { id: 'STOP', nombre: 'Stop',             rpm: 0,    velObjetivoKn: 0    },
+    { id: 'DSAH', nombre: 'Dead Slow Ahead',  rpm: 60,   velObjetivoKn: 5    },
+    { id: 'SAH',  nombre: 'Slow Ahead',       rpm: 150,  velObjetivoKn: 10   },
+    { id: 'HAH',  nombre: 'Half Ahead',       rpm: 250,  velObjetivoKn: 18   },
+    { id: 'MAN',  nombre: 'Manoeuvring',      rpm: 320,  velObjetivoKn: 22   },
+    { id: 'FAH',  nombre: 'Full Ahead',       rpm: 400,  velObjetivoKn: 27.5 },
   ],
   tauVelocidad: 35,           // ~35 segundos para alcanzar el 63% del objetivo
   maxTurnRateDegPerSec: 1.6,  // a timón 35°, gira ~1.6°/s
+  maxTurnRateDiferencialDegPerSec: 0.25, // ~15°/min con máquinas opuestas a full
 };
 
 // Por ahora solo M140. Cuando hagamos la calibración con fleet.cfg, esto

@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
-import { Dial } from './aula/dial.js';
-import { Telegrafo, POSICIONES as POSICIONES_TELEGRAFO } from './aula/telegrafo.js';
+import { Reloj } from './aula/reloj.js';
+import { Telegrafo } from './aula/telegrafo.js';
 import { CANALES_VHF, type CanalVHF } from '../shared/types.js';
 import type {
   CartaParseada,
@@ -10,7 +10,6 @@ import type {
   MensajePrivado,
   MensajeVHF,
   ShipControlPayload,
-  TelegrafoId,
   TickPayload,
 } from '../shared/types.js';
 
@@ -35,27 +34,35 @@ const canvas = el<HTMLCanvasElement>('cartaCanvas');
 const aulaMain = el<HTMLElement>('aulaMain');
 const radarFrame = el<HTMLIFrameElement>('radarFrame');
 
-// Heading + turn rate + set course + rudder
+// Consola (escenario escalable)
+const consolaContenedor = el<HTMLDivElement>('consolaContenedor');
+const consolaEscalador = el<HTMLDivElement>('consolaEscalador');
+const consolaEscenario = el<HTMLDivElement>('consolaEscenario');
+
+// Gobierno
 const displayHeading = el<HTMLDivElement>('displayHeading');
-const displayTurnRate = el<HTMLSpanElement>('displayTurnRate');
+const turnRateBabor = el<HTMLImageElement>('turnRateBabor');
+const turnRateEstribor = el<HTMLImageElement>('turnRateEstribor');
+const btnAuto = el<HTMLButtonElement>('btnAuto');
 const inputSetCourse = el<HTMLInputElement>('inputSetCourse');
-const btnSetCourseEnter = el<HTMLButtonElement>('btnSetCourseEnter');
-const btnAutopilot = el<HTMLButtonElement>('btnAutopilot');
-const displaySetCourse = el<HTMLSpanElement>('displaySetCourse');
-const inputRudder = el<HTMLInputElement>('inputRudder');
-const btnRudderPort = el<HTMLButtonElement>('btnRudderPort');
-const btnRudderStbd = el<HTMLButtonElement>('btnRudderStbd');
-const btnRudderCenter = el<HTMLButtonElement>('btnRudderCenter');
+const btnEnter = el<HTMLButtonElement>('btnEnter');
+const btnManual = el<HTMLButtonElement>('btnManual');
+const displayRudder = el<HTMLDivElement>('displayRudder');
+const joystick = el<HTMLDivElement>('joystick');
+const joystickImg = el<HTMLImageElement>('joystickImg');
 
 // Telégrafo
 const telegrafoMount = el<HTMLDivElement>('telegrafoMount');
-const displayVelObj = el<HTMLSpanElement>('displayVelObj');
-const displayVelReal = el<HTMLSpanElement>('displayVelReal');
 
-// LOG / Time
-const displayDistance = el<HTMLSpanElement>('displayDistance');
-const displayTime = el<HTMLSpanElement>('displayTime');
-const displayUTC = el<HTMLSpanElement>('displayUTC');
+// LOG / DISTANCE / TIME
+const btnLog1 = el<HTMLButtonElement>('btnLog1');
+const btnLog2 = el<HTMLButtonElement>('btnLog2');
+const displayLog = el<HTMLDivElement>('displayLog');
+const btnDistReset = el<HTMLButtonElement>('btnDistReset');
+const displayDistance = el<HTMLDivElement>('displayDistance');
+const btnUtc = el<HTMLButtonElement>('btnUtc');
+const btnLocal = el<HTMLButtonElement>('btnLocal');
+const displayTime = el<HTMLDivElement>('displayTime');
 
 // GPS
 const displayLat = el<HTMLSpanElement>('displayLat');
@@ -65,6 +72,12 @@ const displayGpsSpeed = el<HTMLSpanElement>('displayGpsSpeed');
 const displayGpsTrip = el<HTMLSpanElement>('displayGpsTrip');
 const displayGpsCourse = el<HTMLSpanElement>('displayGpsCourse');
 
+// VHF
+const vhf = el<HTMLDivElement>('vhf');
+const vhfLcd = el<HTMLDivElement>('vhfLcd');
+const vhfCanalDisplay = el<HTMLSpanElement>('vhfCanalDisplay');
+const vhfLcdInfo = el<HTMLDivElement>('vhfLcdInfo');
+
 // ----- Estado --------------------------------------------------------------
 let sesionId = 0;
 let miOwnshipIndex = 0;
@@ -73,21 +86,27 @@ let imagenCache: HTMLImageElement | null = null;
 let ultimoTick: TickPayload | null = null;
 let socket: Socket | null = null;
 let telegrafo: Telegrafo | null = null;
-let dialRudderCmd: Dial | null = null;
-let dialRudderAngle: Dial | null = null;
-let dialTurnRate: Dial | null = null;
-let dialWindSpeed: Dial | null = null;
-let dialWindDirection: Dial | null = null;
+let dialRudderCmd: Reloj | null = null;
+let dialRudderAngle: Reloj | null = null;
+let dialTurnRate: Reloj | null = null;
+let dialWindSpeed: Reloj | null = null;
+let dialWindDirection: Reloj | null = null;
 
-// Para no spamear el server con cada tecla, debounceamos los inputs numéricos.
-let rudderDebounce: ReturnType<typeof setTimeout> | null = null;
+// Estado local de la corredera (no afecta la simulación).
+let logSeleccionado: 1 | 2 = 1;
+let horaLocal = false;
+let distanciaOffsetNm = 0;
 
 // Estado de comunicaciones (MVP 6).
 let canalActualVHF: CanalVHF = 16;
+let vhfEncendido = true;
+let vhfTecleo = '';
 let userId = 0;
 const mensajesVHFPorCanal = new Map<CanalVHF, MensajeVHF[]>();
 const mensajesNavtex: MensajeNavtex[] = [];
 const mensajesPrivados: MensajePrivado[] = [];
+type TabComm = 'vhf' | 'navtex' | 'dm';
+let tabActiva: TabComm = 'vhf';
 
 // ----- Init ----------------------------------------------------------------
 async function init(): Promise<void> {
@@ -147,84 +166,130 @@ async function init(): Promise<void> {
 }
 
 function inicializarWidgets(): void {
-  // Telégrafo vertical
-  telegrafo = new Telegrafo(telegrafoMount, (id) => {
-    enviarComando({ telegrafo: id });
+  telegrafo = new Telegrafo(telegrafoMount, (maquina, id) => {
+    enviarComando(maquina === 'babor' ? { telegrafoBabor: id } : { telegrafoEstribor: id });
   });
 
-  // Diales
-  dialRudderCmd = new Dial(el('dialRudderCmd'), {
-    label: 'RUDDER COMMAND',
-    unit: '°',
-    min: -35,
-    max: 35,
-    ticks: 7,
+  // Relojes con las esferas originales. Los ángulos se midieron sobre los
+  // gráficos: el timón tiene el 0 abajo y ±40° a ~60° de las 12; el turn rate
+  // y el viento barren ±135° desde arriba.
+  const VENTANITA_ARRIBA = { x: 87, y: 55, w: 32, h: 16 };
+  const VENTANITA_ABAJO = { x: 87, y: 130, w: 32, h: 16 };
+  const timon = (v: number) => 180 - clamp(v, -40, 40) * 3;
+  const magnitud = (v: number) => Math.abs(v).toFixed(0);
+  dialRudderCmd = new Reloj(el('dialRudderCmd'), {
+    imagen: '/img/consola/reloj-rudder-command.png',
+    angulo: timon, texto: magnitud, ventanita: VENTANITA_ARRIBA,
   });
-  dialRudderAngle = new Dial(el('dialRudderAngle'), {
-    label: 'RUDDER ANGLE',
-    unit: '°',
-    min: -35,
-    max: 35,
-    ticks: 7,
+  dialRudderAngle = new Reloj(el('dialRudderAngle'), {
+    imagen: '/img/consola/reloj-rudder-angle.png',
+    angulo: timon, texto: magnitud, ventanita: VENTANITA_ARRIBA,
   });
-  dialTurnRate = new Dial(el('dialTurnRate'), {
-    label: 'TURN RATE',
-    unit: '°/min',
-    min: -90,
-    max: 90,
-    ticks: 6,
+  dialTurnRate = new Reloj(el('dialTurnRate'), {
+    imagen: '/img/consola/reloj-turn-rate.png',
+    angulo: (v) => (clamp(v, -300, 300) / 300) * 135, texto: magnitud, ventanita: VENTANITA_ABAJO,
   });
-  dialWindSpeed = new Dial(el('dialWindSpeed'), {
-    label: 'WIND SPEED',
-    unit: 'kn',
-    min: 0,
-    max: 60,
-    ticks: 6,
+  dialWindSpeed = new Reloj(el('dialWindSpeed'), {
+    imagen: '/img/consola/reloj-wind-speed.png',
+    angulo: (v) => -135 + (clamp(v, 0, 150) / 150) * 270, texto: magnitud, ventanita: VENTANITA_ABAJO,
   });
-  dialWindDirection = new Dial(el('dialWindDirection'), {
-    label: 'WIND DIRECTION',
-    unit: '°',
-    min: 0,
-    max: 360,
-    ticks: 8,
-    compass: true,
+  dialWindDirection = new Reloj(el('dialWindDirection'), {
+    imagen: '/img/consola/reloj-wind-direction.png',
+    angulo: (v) => v, marcadorEnAro: true,
   });
+
+  // Precargar los estados "apretado" de los botones para que no parpadeen.
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.btn-img')) {
+    new Image().src = `/img/consola/btn-${btn.dataset.img}-down.png`;
+  }
+  for (const pos of ['ll', 'l', 'c', 'r', 'rr']) new Image().src = `/img/consola/joystick-${pos}.png`;
 }
 
 function cablearControles(): void {
-  // SET COURSE
-  btnSetCourseEnter.addEventListener('click', () => {
+  // SET COURSE: se escribe en el display y se confirma con ENTER.
+  botonMomentaneo(btnEnter, () => {
     const v = clampDeg(Number(inputSetCourse.value));
-    inputSetCourse.value = String(v);
+    inputSetCourse.value = formatRumbo(v);
+    inputSetCourse.blur();
     enviarComando({ setCourseDeg: v });
   });
   inputSetCourse.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') btnSetCourseEnter.click();
+    if (e.key === 'Enter') btnEnter.click();
   });
 
-  // AUTOPILOT toggle
-  btnAutopilot.addEventListener('click', () => {
-    const ahora = ultimoMioOnly()?.autopilotOn ?? false;
-    enviarComando({ autopilotOn: !ahora });
-  });
+  // AUTO / MANUAL: quedan "hundidos" según el modo que informa el server.
+  btnAuto.addEventListener('click', () => enviarComando({ autopilotOn: true }));
+  btnManual.addEventListener('click', () => enviarComando({ autopilotOn: false }));
 
-  // RUDDER COMMAND con +/- y centrar
-  btnRudderPort.addEventListener('click', () => aplicarRudder(-magnitudInputRudder()));
-  btnRudderStbd.addEventListener('click', () => aplicarRudder(+magnitudInputRudder()));
-  btnRudderCenter.addEventListener('click', () => {
-    inputRudder.value = '0';
-    aplicarRudder(0);
-  });
-  inputRudder.addEventListener('input', () => {
-    if (rudderDebounce) clearTimeout(rudderDebounce);
-    rudderDebounce = setTimeout(() => {
-      const m = magnitudInputRudder();
-      // Si el usuario ya seleccionó un lado, mantener el signo del valor actual.
+  // Joystick: cada click en un costado mueve el timón 5°; el centro lo pone
+  // a la vía.
+  for (const zona of joystick.querySelectorAll<HTMLButtonElement>('.joystick-zona')) {
+    zona.addEventListener('click', () => {
+      const paso = Number(zona.dataset.paso);
       const actual = ultimoMioOnly()?.rudderCommandDeg ?? 0;
-      const signo = actual < 0 ? -1 : 1;
-      aplicarRudder(signo * m);
-    }, 250);
+      aplicarRudder(paso === 0 ? 0 : actual + paso);
+    });
+  }
+  // Atajo de teclado: flechas izquierda/derecha = 5° a babor/estribor, salvo
+  // que el alumno esté escribiendo en un campo.
+  window.addEventListener('keydown', (e) => {
+    const t = e.target as HTMLElement;
+    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const actual = ultimoMioOnly()?.rudderCommandDeg ?? 0;
+    aplicarRudder(actual + (e.key === 'ArrowLeft' ? -5 : 5));
+    e.preventDefault();
   });
+
+  // Corredera: LOG1/LOG2 y UTC/LOCAL son selectores excluyentes.
+  btnLog1.addEventListener('click', () => { logSeleccionado = 1; pintarCorredera(); });
+  btnLog2.addEventListener('click', () => { logSeleccionado = 2; pintarCorredera(); });
+  btnUtc.addEventListener('click', () => { horaLocal = false; pintarCorredera(); });
+  btnLocal.addEventListener('click', () => { horaLocal = true; pintarCorredera(); });
+  botonMomentaneo(btnDistReset, () => {
+    distanciaOffsetNm = ultimoMioOnly()?.distanceTotalNm ?? 0;
+    actualizarWidgets();
+  });
+  pintarCorredera();
+
+  // La consola mide 1025 px como la pantalla original; la escalamos para que
+  // entre a lo ancho del panel en el que esté (principal o secundario).
+  new ResizeObserver(escalarConsola).observe(consolaContenedor);
+}
+
+const ANCHO_CONSOLA = 1025;
+const ALTO_CONSOLA = 785;
+
+function escalarConsola(): void {
+  const escala = Math.min(1.5, consolaContenedor.clientWidth / ANCHO_CONSOLA);
+  consolaEscenario.style.transform = `scale(${escala})`;
+  consolaEscalador.style.width = `${ANCHO_CONSOLA * escala}px`;
+  consolaEscalador.style.height = `${ALTO_CONSOLA * escala}px`;
+}
+
+function pintarCorredera(): void {
+  pintarBoton(btnLog1, logSeleccionado === 1);
+  pintarBoton(btnLog2, logSeleccionado === 2);
+  pintarBoton(btnUtc, !horaLocal);
+  pintarBoton(btnLocal, horaLocal);
+}
+
+// Botón con gráfico original: muestra la imagen "down" o "up".
+function pintarBoton(btn: HTMLButtonElement, apretado: boolean): void {
+  const img = btn.querySelector('img')!;
+  const src = `/img/consola/btn-${btn.dataset.img}-${apretado ? 'down' : 'up'}.png`;
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  btn.setAttribute('aria-pressed', String(apretado));
+}
+
+// Botón que se hunde solo mientras se lo aprieta (ENTER, DIST RESET).
+function botonMomentaneo(btn: HTMLButtonElement, accion: () => void): void {
+  btn.addEventListener('pointerdown', () => pintarBoton(btn, true));
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel'] as const) {
+    btn.addEventListener(ev, () => pintarBoton(btn, false));
+  }
+  btn.addEventListener('click', accion);
+  btn.removeAttribute('aria-pressed');
 }
 
 function aplicarRudder(deg: number): void {
@@ -232,14 +297,17 @@ function aplicarRudder(deg: number): void {
   enviarComando({ rudderCommandDeg: clamped });
 }
 
-function magnitudInputRudder(): number {
-  const v = Math.abs(Number(inputRudder.value));
-  return Number.isFinite(v) ? Math.max(0, Math.min(35, v)) : 0;
-}
-
 function clampDeg(v: number): number {
   if (!Number.isFinite(v)) return 0;
   return ((Math.round(v) % 360) + 360) % 360;
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
+
+function formatRumbo(deg: number): string {
+  return Math.round(deg).toString().padStart(3, '0');
 }
 
 function conectarSocket(): void {
@@ -273,16 +341,21 @@ function conectarSocket(): void {
     const list = mensajesVHFPorCanal.get(m.canal) ?? [];
     list.push(m);
     mensajesVHFPorCanal.set(m.canal, list);
-    if (m.canal === canalActualVHF) refrescarVHF();
+    if (m.canal === canalActualVHF && vhfEncendido) {
+      refrescarVHF();
+      marcarNuevo('vhf');
+    }
   });
   socket.on('navtex:message', (m: MensajeNavtex) => {
     mensajesNavtex.push(m);
     refrescarNavtex();
+    marcarNuevo('navtex');
   });
   socket.on('dm:message', (m: MensajePrivado) => {
     if (m.deUserId !== userId && m.paraUserId !== userId) return;
     mensajesPrivados.push(m);
     refrescarDM();
+    if (m.deUserId !== userId) marcarNuevo('dm');
   });
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
@@ -310,29 +383,118 @@ function enviarComando(payload: ShipControlPayload): void {
 }
 
 // ----- Comunicaciones -----
+// Botonera del VHF 3001, en px del gráfico original (224x273). Cada tecla es
+// un botón transparente encima del dibujo.
+const TECLAS_VHF: { tecla: string; x: number; y: number; label: string }[] = [
+  { tecla: 'lock', x: 139, y: 35, label: 'Lock' },
+  { tecla: 'onoff', x: 176, y: 35, label: 'Encender / apagar' },
+  { tecla: 'prog', x: 139, y: 71, label: 'Prog' },
+  { tecla: 'config', x: 176, y: 71, label: 'Configuración' },
+  { tecla: '1', x: 18, y: 116, label: '1' },
+  { tecla: '2', x: 55, y: 116, label: '2' },
+  { tecla: '3', x: 92, y: 116, label: '3' },
+  { tecla: 'fp', x: 139, y: 116, label: 'F/P' },
+  { tecla: 'potencia', x: 176, y: 116, label: 'Full/Low' },
+  { tecla: '4', x: 18, y: 152, label: '4' },
+  { tecla: '5', x: 55, y: 152, label: '5' },
+  { tecla: '6', x: 92, y: 152, label: '6' },
+  { tecla: 'sql', x: 139, y: 152, label: 'Squelch' },
+  { tecla: 'parlante', x: 176, y: 152, label: 'Parlante' },
+  { tecla: '7', x: 18, y: 188, label: '7' },
+  { tecla: '8', x: 55, y: 188, label: '8' },
+  { tecla: '9', x: 92, y: 188, label: '9' },
+  { tecla: 'sqlmas', x: 139, y: 188, label: 'Squelch +' },
+  { tecla: 'volmas', x: 176, y: 188, label: 'Volumen +' },
+  { tecla: '0', x: 18, y: 224, label: '0' },
+  { tecla: 'scan', x: 55, y: 224, label: 'Scan: siguiente canal' },
+  { tecla: '16', x: 92, y: 224, label: 'Canal 16' },
+  { tecla: 'sqlmenos', x: 139, y: 224, label: 'Squelch −' },
+  { tecla: 'volmenos', x: 176, y: 224, label: 'Volumen −' },
+];
+
 function cablearComunicaciones(): void {
-  const select = document.getElementById('vhfCanal') as HTMLSelectElement;
-  for (const canal of CANALES_VHF) {
-    const opt = document.createElement('option');
-    opt.value = String(canal);
-    opt.textContent = String(canal).padStart(2, '0');
-    if (canal === canalActualVHF) opt.selected = true;
-    select.appendChild(opt);
+  for (const t of TECLAS_VHF) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'vhf-tecla';
+    b.style.left = `${t.x}px`;
+    b.style.top = `${t.y}px`;
+    b.title = t.label;
+    b.setAttribute('aria-label', `VHF: ${t.label}`);
+    b.addEventListener('click', () => teclaVHF(t.tecla));
+    vhf.appendChild(b);
   }
-  select.addEventListener('change', () => {
-    canalActualVHF = Number(select.value) as CanalVHF;
-    refrescarVHF();
-  });
+  pintarVHF();
 
   const form = document.getElementById('vhfForm') as HTMLFormElement;
   const input = document.getElementById('vhfInput') as HTMLInputElement;
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const texto = input.value.trim();
-    if (!texto) return;
+    if (!texto || !vhfEncendido) return;
     socket?.emit('vhf:transmit', { canal: canalActualVHF, texto });
     input.value = '';
   });
+
+  for (const tab of document.querySelectorAll<HTMLButtonElement>('.comm-tab')) {
+    tab.addEventListener('click', () => seleccionarTab(tab.dataset.tab as TabComm));
+  }
+}
+
+function teclaVHF(tecla: string): void {
+  if (tecla === 'onoff') {
+    vhfEncendido = !vhfEncendido;
+    vhfTecleo = '';
+  } else if (!vhfEncendido) {
+    return;
+  } else if (/^\d$/.test(tecla)) {
+    // Canal de dos dígitos: el primero queda "tecleado" hasta el segundo.
+    vhfTecleo += tecla;
+    if (vhfTecleo.length === 2) {
+      const canal = Number(vhfTecleo) as CanalVHF;
+      vhfTecleo = '';
+      if (CANALES_VHF.includes(canal)) cambiarCanal(canal);
+      else vhfLcdInfo.textContent = 'CANAL NO VÁLIDO';
+    }
+  } else if (tecla === '16') {
+    vhfTecleo = '';
+    cambiarCanal(16);
+  } else if (tecla === 'scan') {
+    const i = CANALES_VHF.indexOf(canalActualVHF);
+    cambiarCanal(CANALES_VHF[(i + 1) % CANALES_VHF.length]!);
+  }
+  pintarVHF();
+}
+
+function cambiarCanal(canal: CanalVHF): void {
+  canalActualVHF = canal;
+  vhfLcdInfo.textContent = '';
+  refrescarVHF();
+}
+
+function pintarVHF(): void {
+  vhfLcd.classList.toggle('apagado', !vhfEncendido);
+  vhfCanalDisplay.textContent = vhfTecleo ? `${vhfTecleo}_` : String(canalActualVHF).padStart(2, '0');
+  (document.getElementById('vhfInput') as HTMLInputElement).disabled = !vhfEncendido;
+}
+
+function seleccionarTab(tab: TabComm): void {
+  tabActiva = tab;
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.comm-tab')) {
+    const activa = b.dataset.tab === tab;
+    b.setAttribute('aria-selected', String(activa));
+    if (activa) b.querySelector<HTMLElement>('.comm-nuevos')!.hidden = true;
+  }
+  for (const p of document.querySelectorAll<HTMLElement>('.comm-pagina')) {
+    p.hidden = p.dataset.tab !== tab;
+  }
+}
+
+// Punto de "mensaje nuevo" en la pestaña, si no es la que se está mirando.
+function marcarNuevo(tab: TabComm): void {
+  if (tab === tabActiva) return;
+  const badge = document.querySelector<HTMLElement>(`.comm-tab[data-tab="${tab}"] .comm-nuevos`);
+  if (badge) badge.hidden = false;
 }
 
 function refrescarVHF(): void {
@@ -343,6 +505,9 @@ function refrescarVHF(): void {
     .map((m) => `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> <strong>${escape(m.remitenteNombre)}:</strong> ${escape(m.texto)}</div>`)
     .join('');
   list.scrollTop = list.scrollHeight;
+  const ultimo = msgs[msgs.length - 1];
+  if (ultimo && !vhfLcdInfo.textContent) vhfLcdInfo.textContent = `RX ${ultimo.remitenteNombre}`;
+  pintarVHF();
 }
 
 function refrescarNavtex(): void {
@@ -388,45 +553,39 @@ function actualizarWidgets(): void {
   const mio = ultimoMioOnly();
   if (!mio) return;
 
-  // Heading + turn rate
+  // HEADING + barra de TURN RATE (±30°/min, como la escala impresa)
   displayHeading.textContent = mio.headingDeg.toFixed(1).padStart(5, '0');
-  displayTurnRate.textContent = `${mio.turnRateDegPerMin >= 0 ? '+' : ''}${mio.turnRateDegPerMin.toFixed(1)}°/min`;
+  const fraccion = Math.min(1, Math.abs(mio.turnRateDegPerMin) / 30);
+  const oculto = `${((1 - fraccion) * 100).toFixed(1)}%`;
+  // Rojo = cayendo a babor (se enciende del centro hacia la izquierda),
+  // verde = a estribor (del centro hacia la derecha).
+  turnRateBabor.style.clipPath = mio.turnRateDegPerMin < 0 ? `inset(0 0 0 ${oculto})` : 'inset(0 0 0 100%)';
+  turnRateEstribor.style.clipPath = mio.turnRateDegPerMin > 0 ? `inset(0 ${oculto} 0 0)` : 'inset(0 100% 0 0)';
 
-  // Set course + autopiloto
-  displaySetCourse.textContent = `${Math.round(mio.setCourseDeg).toString().padStart(3, '0')}°`;
-  btnAutopilot.classList.toggle('active', mio.autopilotOn);
-  btnAutopilot.textContent = mio.autopilotOn ? 'AUTO ON' : 'AUTO OFF';
-  // Si no estamos editando el input, mantenerlo sincronizado con el server.
+  // SET COURSE + AUTO/MANUAL
+  pintarBoton(btnAuto, mio.autopilotOn);
+  pintarBoton(btnManual, !mio.autopilotOn);
   if (document.activeElement !== inputSetCourse) {
-    inputSetCourse.value = String(Math.round(mio.setCourseDeg));
+    inputSetCourse.value = formatRumbo(mio.setCourseDeg);
   }
 
-  // Rudder: si autopiloto está on, deshabilitamos los controles manuales.
-  inputRudder.disabled = mio.autopilotOn;
-  btnRudderPort.disabled = mio.autopilotOn;
-  btnRudderStbd.disabled = mio.autopilotOn;
-  btnRudderCenter.disabled = mio.autopilotOn;
-  if (document.activeElement !== inputRudder) {
-    inputRudder.value = String(Math.abs(Math.round(mio.rudderCommandDeg)));
-  }
+  // RUDDER COMMAND: magnitud + lado, y el joystick inclinado hacia ese lado.
+  const rudder = Math.round(mio.rudderCommandDeg);
+  displayRudder.textContent = rudder === 0 ? '0' : `${Math.abs(rudder)} ${rudder < 0 ? 'P' : 'S'}`;
+  const posJoystick = rudder <= -20 ? 'll' : rudder < 0 ? 'l' : rudder >= 20 ? 'rr' : rudder > 0 ? 'r' : 'c';
+  const srcJoystick = `/img/consola/joystick-${posJoystick}.png`;
+  if (joystickImg.getAttribute('src') !== srcJoystick) joystickImg.setAttribute('src', srcJoystick);
+  joystick.classList.toggle('deshabilitado', mio.autopilotOn);
 
-  // Telégrafo: si el server tiene una posición distinta a la nuestra (ej. otra
-  // ventana del alumno) la sincronizamos.
-  if (telegrafo && POSICIONES_TELEGRAFO.find((p) => p.id === mio.telegrafo)) {
-    telegrafo.set(mio.telegrafo as TelegrafoId, false);
-  }
+  // Telégrafo: sincronizamos con el server (ej. el alumno tiene dos pestañas).
+  telegrafo?.set('babor', mio.telegrafoBabor);
+  telegrafo?.set('estribor', mio.telegrafoEstribor);
 
-  // Velocidad ordenada y real
-  displayVelObj.textContent = `${mio.velObjetivoKn.toFixed(1)} kn`;
-  displayVelReal.textContent = `${mio.velocidadKn.toFixed(1)} kn`;
-
-  // LOG / TIME — usamos optional chaining para tolerar payloads viejos sin 'ambiente'.
-  displayDistance.textContent = `${(mio.distanceTotalNm ?? 0).toFixed(2)} nm`;
-  const tripStart = mio.tripStartedAt ?? Date.now();
-  const segundos = Math.max(0, Math.floor((Date.now() - tripStart) / 1000));
-  displayTime.textContent = formatHMS(segundos);
+  // LOG (velocidad sobre el agua) / DISTANCE / TIME
+  displayLog.textContent = mio.velocidadKn.toFixed(1);
+  displayDistance.textContent = Math.max(0, (mio.distanceTotalNm ?? 0) - distanciaOffsetNm).toFixed(2);
   const utcTs = ultimoTick.ambiente?.utcTimestamp ?? Date.now();
-  displayUTC.textContent = formatUTC(utcTs);
+  displayTime.textContent = horaLocal ? formatHora(utcTs) : formatUTC(utcTs);
 
   // GPS
   displayLat.textContent = formatDMS(mio.lat, true);
@@ -436,7 +595,7 @@ function actualizarWidgets(): void {
   displayGpsTrip.textContent = `${(mio.distanceTotalNm ?? 0).toFixed(2)} nm`;
   displayGpsCourse.textContent = `${mio.headingDeg.toFixed(1)}°`;
 
-  // Diales
+  // Relojes
   dialRudderCmd?.setValue(mio.rudderCommandDeg ?? 0);
   dialRudderAngle?.setValue(mio.rudderAngleDeg ?? 0);
   dialTurnRate?.setValue(mio.turnRateDegPerMin ?? 0);
@@ -549,13 +708,6 @@ function formatDMS(coord: number, esLat: boolean): string {
   return `${grados}°${minutos.padStart(6, '0')}'${sufijo}`;
 }
 
-function formatHMS(segundos: number): string {
-  const h = Math.floor(segundos / 3600);
-  const m = Math.floor((segundos % 3600) / 60);
-  const s = segundos % 60;
-  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
-}
-
 function formatUTC(ts: number): string {
   const d = new Date(ts);
   return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())}`;
@@ -594,7 +746,6 @@ seleccionarPrincipal('radar');
 // por eso observamos los contenedores en vez de escuchar window.resize. El
 // iframe del radar recibe su propio resize y se ajusta solo.
 new ResizeObserver(() => redraw()).observe(canvas.parentElement!);
-new ResizeObserver(() => telegrafo?.refresh()).observe(telegrafoMount);
 
 document.getElementById('logoutBtn')!.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });

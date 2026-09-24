@@ -96,6 +96,9 @@ export interface SesionDelAlumno {
 // Tipos para la simulación (compartidos cliente ↔ server vía Socket.IO)
 // =============================================================================
 
+// Posiciones del telégrafo del Melipal: 10, incluyendo MAN (Manoeuvring,
+// entre Full y Half Ahead). El buque tiene dos máquinas y cada una tiene su
+// propia palanca.
 export type TelegrafoId =
   | 'FAS'
   | 'HAS'
@@ -105,12 +108,18 @@ export type TelegrafoId =
   | 'DSAH'
   | 'SAH'
   | 'HAH'
+  | 'MAN'
   | 'FAH';
+
+export const TELEGRAFO_IDS: readonly TelegrafoId[] = [
+  'FAS', 'HAS', 'SAS', 'DSAS', 'STOP', 'DSAH', 'SAH', 'HAH', 'MAN', 'FAH',
+];
 
 export interface PosicionTelegrafo {
   id: TelegrafoId;
   nombre: string;
-  velObjetivoKn: number;
+  rpm: number;            // vueltas de la máquina en esa posición (fleet.cfg)
+  velObjetivoKn: number;  // velocidad con las dos máquinas en esa posición
 }
 
 // Estado público de un buque que el server emite por tick.
@@ -123,9 +132,10 @@ export interface EstadoBuqueDTO {
   headingDeg: number;       // rumbo actual del giroscompás (0-360)
   velocidadKn: number;      // velocidad sobre el agua (knots)
   turnRateDegPerMin: number;// tasa de giro instantánea (grados/minuto, signo = lado)
-  // Comandos del operador
-  telegrafo: TelegrafoId;
-  velObjetivoKn: number;
+  // Comandos del operador: una palanca por máquina
+  telegrafoBabor: TelegrafoId;
+  telegrafoEstribor: TelegrafoId;
+  velObjetivoKn: number;    // la que dan las RPM promedio de las dos máquinas
   rudderCommandDeg: number; // ángulo comandado (-35..+35)
   rudderAngleDeg: number;   // ángulo real del timón (puede ir lento al comandado)
   // Autopiloto
@@ -154,7 +164,8 @@ export interface TickPayload {
 
 // Comandos que el cliente envía al server por Socket.IO.
 export interface ShipControlPayload {
-  telegrafo?: TelegrafoId;
+  telegrafoBabor?: TelegrafoId;
+  telegrafoEstribor?: TelegrafoId;
   rudderCommandDeg?: number;
   setCourseDeg?: number;
   autopilotOn?: boolean;

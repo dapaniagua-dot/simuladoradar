@@ -247,7 +247,7 @@ td a:hover { text-decoration: underline; }
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
     "principal sec1"
@@ -323,24 +323,164 @@ td a:hover { text-decoration: underline; }
   }
 }
 
-/* ---------- Consola de mando (estructura, sin pulir) ---------- */
+/* ---------- Consola de mando: réplica del Melipal con sus gráficos ---------- */
+@font-face {
+  font-family: "Melipal 7seg";
+  src: url("/fonts/7segmentos.ttf") format("truetype");
+  font-display: block;
+}
+
 .consola-melipal {
-  background: var(--bg-card);
-  padding: 12px;
+  background: #1b1e21;
   overflow-y: auto;
+  /* Reservar el lugar del scrollbar: si no, al aparecer cambia el ancho, se
+     re-escala la consola y puede quedar oscilando. */
+  scrollbar-gutter: stable;
+}
+.consola-escalador {
+  position: relative;
+  margin: 0 auto;
+}
+/* Mide 1025x785 como la pantalla del Melipal; aula.ts le aplica scale(). */
+.consola-escenario {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1025px;
+  height: 785px;
+  transform-origin: 0 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  user-select: none;
 }
-.consola-titulo h2 { margin: 0; font-size: 15px; display: flex; gap: 8px; align-items: center; }
-.consola-fila {
-  display: grid;
-  gap: 12px;
-}
-.consola-fila-superior { grid-template-columns: 1.2fr 0.7fr 1fr; }
-.consola-fila-diales { grid-template-columns: repeat(5, 1fr); }
-.consola-fila-inferior { grid-template-columns: 1.5fr 1fr; }
+.consola-fila { display: flex; }
 
+.panel-img {
+  position: relative;
+  height: 290px;
+  flex-shrink: 0;
+}
+.panel-fondo { display: block; width: 100%; height: 100%; }
+.pos { position: absolute; margin: 0; }
+
+.panel-grabado {
+  text-align: center;
+  font: 600 17px Arial, Helvetica, sans-serif;
+  color: #1c1c1c;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.5px;
+}
+
+/* Botones dibujados: el gráfico ya trae el botón, el <button> es invisible. */
+.btn-img {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+.btn-img img { display: block; }
+.btn-img:hover { filter: brightness(1.1); }
+.btn-img:focus-visible, .vhf-tecla:focus-visible, .joystick-zona:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+/* Barra de TURN RATE: el gráfico encendido se recorta con clip-path. */
+.turnrate-barra { width: 96px; height: 19px; overflow: hidden; }
+.turnrate-barra img { display: block; clip-path: inset(0 100% 0 0); }
+
+.joystick { width: 71px; height: 44px; display: flex; }
+.joystick img { position: absolute; inset: 0; pointer-events: none; }
+.joystick-zona {
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  z-index: 1;
+}
+.joystick-centro { flex: 0.6; }
+.joystick.deshabilitado { opacity: 0.6; }
+.joystick.deshabilitado .joystick-zona { cursor: not-allowed; }
+
+/* Pantallita LCD (GPS): mismo verde grisáceo que el display del VHF 3001. */
+.lcd {
+  background: #a9b192;
+  border: 3px solid #2b2d2b;
+  border-radius: 3px;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
+  color: #1b2014;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font: 600 17px ui-monospace, "Cascadia Code", Menlo, monospace;
+}
+.lcd-fila { display: flex; justify-content: space-between; }
+.lcd-fila span:first-child { font-size: 13px; opacity: 0.75; }
+
+.vhf { width: 224px; height: 273px; }
+.vhf-cuerpo { display: block; }
+.vhf-lcd {
+  position: absolute;
+  left: 17px;
+  top: 34px;
+  width: 111px;
+  height: 73px;
+  padding: 4px 6px;
+  color: #1b2014;
+  font-family: ui-monospace, monospace;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.vhf-lcd-canal { display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; }
+.vhf-lcd-canal small { font-size: 11px; }
+.vhf-lcd-canal span { font: 38px/1 "Melipal 7seg", ui-monospace, monospace; }
+.vhf-lcd-info { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vhf-lcd.apagado > * { visibility: hidden; }
+.vhf-tecla {
+  position: absolute;
+  width: 35px;
+  height: 35px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.vhf-tecla:active { background: rgba(0, 0, 0, 0.3); }
+
+/* Panel de comunicaciones sobre chapa */
+.comm { display: flex; flex-direction: column; gap: 4px; }
+.comm-tabs { display: flex; gap: 3px; }
+.comm-tab {
+  flex: 1;
+  padding: 4px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ddd;
+  background: #3a3d40;
+  border: 1px solid #222;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.comm-tab[aria-selected="true"] { background: #1e2124; color: #3cff8f; }
+.comm-nuevos {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff3b3b;
+}
+.comm-nuevos[hidden] { display: none; }
+.comm-pagina { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.comm-pagina[hidden] { display: none; }
+.comm .comm-list { flex: 1; height: auto; background: #101416; border-color: #2b2d2b; }
+
+/* ---------- Paneles genéricos (radar, vista del profesor) ---------- */
 .panel {
   background: #0d1c2a;
   border: 1px solid var(--border);
@@ -364,16 +504,22 @@ td a:hover { text-decoration: underline; }
 
 /* ---------- Displays digitales ---------- */
 .display-7seg {
-  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-family: "Melipal 7seg", ui-monospace, "Cascadia Code", Menlo, monospace;
   font-size: 28px;
-  font-weight: 700;
-  color: var(--accent);
-  background: #001a14;
-  padding: 4px 10px;
-  border-radius: 3px;
-  text-align: center;
+  color: #3cff8f;
+  text-shadow: 0 0 6px rgba(60, 255, 143, 0.55);
+  background: #151715;
+  border-radius: 2px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   letter-spacing: 2px;
+  white-space: nowrap;
 }
+#displayRudder, #displayDistance, #displayTime { font-size: 21px; }
+.display-input { border: 0; outline: none; text-align: right; cursor: text; }
+.display-input:focus { box-shadow: inset 0 0 0 1px #3cff8f; }
 .display-7seg-sm {
   font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
   font-size: 14px;
@@ -386,17 +532,6 @@ td a:hover { text-decoration: underline; }
 }
 
 /* ---------- Inputs / botones de la consola ---------- */
-.set-course, .rudder-cmd {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.set-course input, .rudder-cmd input {
-  width: 70px;
-  text-align: right;
-  padding: 4px 6px;
-  font-size: 14px;
-}
 .btn-sm {
   padding: 4px 10px;
   font-size: 12px;
@@ -409,103 +544,29 @@ td a:hover { text-decoration: underline; }
 .btn-sm:hover:not(:disabled) { background: #1a3a55; }
 .btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-toggle.active { background: var(--accent); color: #001b13; border-color: var(--accent); }
-.btn-port, .btn-stbd {
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  background: #143046;
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
-.btn-port:hover:not(:disabled) { background: #6a2222; }
-.btn-stbd:hover:not(:disabled) { background: #1f5a3a; }
-.btn-port:disabled, .btn-stbd:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ---------- Telégrafo vertical ---------- */
-.telegrafo-mount {
-  position: relative;
-  height: 320px;
-  width: 100%;
-}
-.telegrafo {
-  position: relative;
-  height: 100%;
-  width: 100%;
-}
-.telegrafo-track {
-  position: relative;
-  height: 100%;
-  margin: 0 auto;
-  width: 100%;
-  background: linear-gradient(to bottom,
-    rgba(0, 200, 140, 0.15) 0%,
-    rgba(0, 200, 140, 0.15) 44%,
-    rgba(80, 80, 80, 0.2) 50%,
-    rgba(255, 80, 80, 0.15) 56%,
-    rgba(255, 80, 80, 0.15) 100%);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-.telegrafo-marcas {
-  position: absolute;
-  top: 30px;
-  bottom: 30px;
-  left: 0;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-.telegrafo-marca {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 8px;
-  cursor: pointer;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  color: var(--muted);
-}
-.telegrafo-marca:hover { color: var(--fg); }
-.telegrafo-marca.activa { color: var(--accent); font-weight: 600; }
-.telegrafo-tick { width: 16px; height: 1px; background: var(--muted); }
-.telegrafo-marca.activa .telegrafo-tick { background: var(--accent); height: 2px; }
-.telegrafo-handle {
-  position: absolute;
-  left: 50%;
-  width: 40px;
-  height: 24px;
-  margin-left: -20px;
-  margin-top: -12px;
-  background: var(--accent);
-  color: #001b13;
-  border: 2px solid #003322;
-  border-radius: 3px;
-  cursor: ns-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  user-select: none;
-  transition: top 0.2s ease-out;
-  z-index: 2;
-}
-.telegrafo-handle.arrastrando { transition: none; }
-.telegrafo-handle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* ---------- Telégrafo doble (gráficos originales, 290x290) ---------- */
+.telegrafo-mount { position: relative; width: 290px; height: 290px; }
+.telegrafo { display: flex; }
+.telegrafo img { display: block; height: 290px; touch-action: none; }
+.telegrafo-palanca { cursor: ns-resize; }
+.telegrafo-palanca:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+.telegrafo-escala { cursor: pointer; }
 
-/* ---------- Diales SVG ---------- */
-.dial-host { display: flex; align-items: center; justify-content: center; min-height: 140px; }
-.dial-svg { width: 100%; max-width: 160px; height: auto; }
-.dial-bg { fill: #001a14; stroke: var(--border); stroke-width: 1; }
-.dial-tick { stroke: var(--muted); stroke-width: 1; }
-.dial-tick-label { fill: var(--muted); font-size: 9px; font-family: ui-monospace, monospace; }
-.dial-needle line { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
-.dial-needle circle { fill: var(--accent); }
-.dial-label { fill: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
-.dial-value { fill: var(--accent); font-size: 14px; font-weight: 600; font-family: ui-monospace, monospace; }
+/* ---------- Relojes (esferas originales 205x205) ---------- */
+.reloj-host { position: relative; width: 205px; height: 205px; flex-shrink: 0; }
+.reloj-esfera { display: block; }
+.reloj-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.reloj-aguja path { fill: #f4f4f4; stroke: #444; stroke-width: 0.8; }
+.reloj-aguja circle { fill: #c9c9c9; stroke: #333; stroke-width: 1; }
+.reloj-valor {
+  position: absolute;
+  font-size: 13px;
+  line-height: 16px;
+  padding: 0 2px;
+  text-align: right;
+  background: none;
+}
 
 /* ============================================================
    Radar PPI: ventana independiente
@@ -613,7 +674,6 @@ td a:hover { text-decoration: underline; }
 /* ============================================================
    Comunicaciones (VHF / Navtex / DM) — MVP 6
    ============================================================ */
-.panel-comm { display: flex; flex-direction: column; gap: 4px; }
 .comm-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .comm-row label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
 .comm-row select { flex: 1; padding: 3px 6px; font-size: 12px; }
@@ -631,7 +691,6 @@ td a:hover { text-decoration: underline; }
   flex-direction: column;
   gap: 3px;
 }
-.comm-list-narrow { height: 80px; }
 .comm-item { line-height: 1.3; word-break: break-word; }
 .comm-time { color: var(--muted); font-size: 10px; }
 .comm-input { display: flex; gap: 4px; margin-top: 4px; }

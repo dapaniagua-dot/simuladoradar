@@ -29,6 +29,11 @@ const RUDDER_SLEW_DEG_PER_SEC = 4.0;
 // Ganancia del autopiloto: cuántos grados de timón pone por cada grado de error.
 const AUTOPILOT_GAIN_RUDDER_PER_DEG = 1.5;
 
+// Constante de tiempo con la que el giro por empuje diferencial de las hélices
+// se establece (segundos). Las máquinas tardan en tomar vueltas, así que el
+// giro no aparece instantáneo al mover una palanca.
+const TAU_GIRO_DIFERENCIAL_S = 10;
+
 export interface PosicionInicial {
   lat: number;
   lon: number;
@@ -49,8 +54,10 @@ export interface EstadoBuque {
   // Distancia acumulada
   distanceTotalNm: number;
   tripStartedAt: number;
-  // Comandos del operador
-  telegrafo: TelegrafoId;
+  // Comandos del operador: una palanca por máquina
+  telegrafoBabor: TelegrafoId;
+  telegrafoEstribor: TelegrafoId;
+  giroDiferencialDegPerSec: number; // aporte actual de las hélices al giro
   rudderCommandDeg: number;   // lo que el alumno pidió
   rudderAngleDeg: number;     // lo que físicamente está
   // Autopiloto
@@ -108,7 +115,9 @@ export class Mundo {
       turnRateDegPerMin: 0,
       distanceTotalNm: 0,
       tripStartedAt: ahora,
-      telegrafo: 'STOP',
+      telegrafoBabor: 'STOP',
+      telegrafoEstribor: 'STOP',
+      giroDiferencialDegPerSec: 0,
       rudderCommandDeg: 0,
       rudderAngleDeg: 0,
       autopilotOn: false,
@@ -116,10 +125,11 @@ export class Mundo {
     });
   }
 
-  setTelegrafo(ownshipIndex: number, telegrafo: TelegrafoId): boolean {
+  setTelegrafo(ownshipIndex: number, maquina: 'babor' | 'estribor', telegrafo: TelegrafoId): boolean {
     const b = this.buques.get(ownshipIndex);
     if (!b) return false;
-    b.telegrafo = telegrafo;
+    if (maquina === 'babor') b.telegrafoBabor = telegrafo;
+    else b.telegrafoEstribor = telegrafo;
     return true;
   }
 
@@ -241,11 +251,23 @@ export class Mundo {
   }
 
   private actualizarBuque(b: EstadoBuque, dt: number): void {
-    // 1) Velocidad: converge al objetivo del telégrafo con constante de tiempo tau.
-    const objetivo = b.modelo.telegrafo.find((t) => t.id === b.telegrafo);
-    const vObj = objetivo?.velObjetivoKn ?? 0;
+    // 1) Velocidad: converge, con constante de tiempo tau, a la que daría el
+    //    promedio de RPM de las dos máquinas. Se promedian RPM y no
+    //    velocidades porque la tabla de velocidades es asimétrica (atrás el
+    //    buque anda mucho menos): con una avante y otra atrás a full las RPM
+    //    se cancelan y el buque gira casi en el lugar, como en la realidad.
+    const rpmBabor = rpmDe(b.modelo, b.telegrafoBabor);
+    const rpmEstribor = rpmDe(b.modelo, b.telegrafoEstribor);
+    const vObj = velObjetivoPorRpm(b.modelo, (rpmBabor + rpmEstribor) / 2);
     const tau = Math.max(1, b.modelo.tauVelocidad);
     b.velocidadKn += ((vObj - b.velocidadKn) * dt) / tau;
+
+    // 1b) Empuje diferencial: si babor empuja más que estribor la proa cae a
+    //     estribor (heading crece), y al revés. Funciona aun con el buque
+    //     parado, que es justamente para lo que se usa al maniobrar.
+    const rpmMax = Math.max(1, ...b.modelo.telegrafo.map((t) => Math.abs(t.rpm)));
+    const giroObj = ((rpmBabor - rpmEstribor) / (2 * rpmMax)) * b.modelo.maxTurnRateDiferencialDegPerSec;
+    b.giroDiferencialDegPerSec += ((giroObj - b.giroDiferencialDegPerSec) * dt) / TAU_GIRO_DIFERENCIAL_S;
 
     // 2) Autopiloto: si está activo, calcula el rudder command como un P
     //    proporcional al error de heading respecto a setCourse.
@@ -269,7 +291,8 @@ export class Mundo {
     //    por la eficiencia (que crece con la velocidad real).
     const max = b.modelo.maxRudderDeg;
     const eficacia = Math.min(1, Math.abs(b.velocidadKn) / Math.max(1, b.modelo.velMaxKn / 2));
-    const turnRateDegPerSec = (b.rudderAngleDeg / max) * b.modelo.maxTurnRateDegPerSec * eficacia;
+    const turnRateDegPerSec =
+      (b.rudderAngleDeg / max) * b.modelo.maxTurnRateDegPerSec * eficacia + b.giroDiferencialDegPerSec;
     b.headingDeg = normalizeDeg(b.headingDeg + turnRateDegPerSec * dt);
 
     // 5) Turn rate observado (en grados/minuto, signo igual que el cambio).
@@ -290,8 +313,25 @@ export class Mundo {
   }
 }
 
+function rpmDe(modelo: ModeloBuque, telegrafo: TelegrafoId): number {
+  return modelo.telegrafo.find((t) => t.id === telegrafo)?.rpm ?? 0;
+}
+
+// Interpola linealmente en la tabla RPM → velocidad del modelo.
+function velObjetivoPorRpm(modelo: ModeloBuque, rpm: number): number {
+  const tabla = [...modelo.telegrafo].sort((a, b) => a.rpm - b.rpm);
+  if (rpm <= tabla[0]!.rpm) return tabla[0]!.velObjetivoKn;
+  for (let i = 1; i < tabla.length; i++) {
+    const a = tabla[i - 1]!;
+    const b = tabla[i]!;
+    if (rpm <= b.rpm) {
+      return a.velObjetivoKn + ((rpm - a.rpm) / (b.rpm - a.rpm)) * (b.velObjetivoKn - a.velObjetivoKn);
+    }
+  }
+  return tabla[tabla.length - 1]!.velObjetivoKn;
+}
+
 function toDTO(b: EstadoBuque): EstadoBuqueDTO {
-  const objetivo = b.modelo.telegrafo.find((t) => t.id === b.telegrafo);
   return {
     ownshipIndex: b.ownshipIndex,
     modeloSigla: b.modelo.sigla,
@@ -300,8 +340,9 @@ function toDTO(b: EstadoBuque): EstadoBuqueDTO {
     headingDeg: b.headingDeg,
     velocidadKn: b.velocidadKn,
     turnRateDegPerMin: b.turnRateDegPerMin,
-    telegrafo: b.telegrafo,
-    velObjetivoKn: objetivo?.velObjetivoKn ?? 0,
+    telegrafoBabor: b.telegrafoBabor,
+    telegrafoEstribor: b.telegrafoEstribor,
+    velObjetivoKn: velObjetivoPorRpm(b.modelo, (rpmDe(b.modelo, b.telegrafoBabor) + rpmDe(b.modelo, b.telegrafoEstribor)) / 2),
     rudderCommandDeg: b.rudderCommandDeg,
     rudderAngleDeg: b.rudderAngleDeg,
     autopilotOn: b.autopilotOn,
