@@ -131,10 +131,16 @@ export class PPI {
   // Centro y radio del PPI en px CSS relativos al canvas. radar.ts lo usa
   // para traducir clicks a marcación/distancia.
   geometria(): Geometria {
+    // Si el panel es casi cuadrado no queda lugar en las esquinas para los
+    // textos (HEADING, OWN SHIP, GAIN…): achicamos el círculo hasta un 9 %.
+    // En un panel apaisado, como la pantalla original, sobra lugar y no se toca.
+    const menor = Math.min(this.ancho, this.alto);
+    const aspecto = Math.max(this.ancho, this.alto) / Math.max(1, menor);
+    const achique = Math.max(0, Math.min(1, (1.45 - aspecto) / 0.45)) * 0.09 * menor;
     return {
       cx: this.ancho / 2,
       cy: this.alto / 2,
-      radio: Math.max(10, Math.min(this.ancho, this.alto) / 2 - BISEL - 4),
+      radio: Math.max(10, menor / 2 - BISEL - 4 - achique),
     };
   }
 
