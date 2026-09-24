@@ -4,15 +4,26 @@ Lista de mejoras agendadas que no entran en el MVP actual pero están planificad
 
 ---
 
-## ⏭️ Próxima sesión (2026-04-29)
+## ⏭️ Próximos pasos (acordados el 2026-09-24)
 
-**Decisión pendiente**: cuál camino tomar para que la consola de mando se parezca al Melipal real (Diego mostró screenshot del módulo Comando original):
+Las tres vistas del alumno y la consola del instructor ya tienen el aspecto del Melipal (DECISIONS D13–D18). La rama `feature/aula-una-pantalla` está en GitHub, pendiente de probar, mergear y desplegar en Railway.
 
-- **Camino A** (recomendado, ~4-6 h): refacción visual rápida — telégrafo vertical mecánico con palanca, display heading 7-seg, rudder con PORT/STBD, GPS PosTech, paneles metálicos.
-- **Camino B** (~3-4 días): A + diales analógicos, autopiloto SET COURSE, LOG/cronómetro completos.
-- **Camino C**: dejar la consola actual y hacer todo el look Melipal en MVP 6 junto con VHF/Navtex.
+Orden acordado con Diego:
 
-Después arrancamos **MVP 4: PPI del radar** (traducción de los `.pas` de Pascal a TypeScript).
+1. **Blancos del profesor**: *Directed Targets* (buques que maneja el profesor: rumbo y velocidad) y *Targets* (siguen una derrota de waypoints con velocidad por tramo, manual sección de Targets). Tienen que aparecer como ecos en el radar (y ser adquiribles por ARPA) y en la carta y la matriz CPA-TCPA del instructor, pero **no** en la carta del alumno (solo GPS propio). Es lo que permite armar situaciones de cruce con cualquier cantidad de alumnos.
+2. **Ver el radar / la consola de un alumno** desde el instructor, en vivo y en solo lectura.
+3. **Viento y corriente**: el profesor los fija (sección Exercise del instructor, como en el Melipal) y afectan a los buques. Conviene hacerlo junto con la calibración física (más abajo).
+
+---
+
+## 🔇 Cosas que se ven pero todavía no funcionan
+
+Se dejaron a la vista para que las pantallas sean iguales al Melipal:
+
+- **Radar**: TRUE MOTION, CENTRE, OWN HISTORY, RADAR ONLY, AUTO ACQUIRE, GROUND STAB, INTERF REJECTION, RAIN, y las pestañas Navigation, Trial Maneuver, Track Zone, Map, Parallel Index y Reference Position. Los 4 sonidos de alarma del `SRadar.exe` ya están extraídos, falta identificar cuál es cuál.
+- **Consola**: PARAM ADJUST, ALARM, LOG FAIL y las teclas del VHF que no son de canal (Lock, SQL, Vol…).
+- **Carta del alumno**: abrir carta, overlay de radar, ARPA sobre la carta, preferencias.
+- **Instructor**: nuevo/abrir/guardar ejercicio, Replay, lluvias, boyas. Los textos siguen en inglés como en el original (Diego puede pedir pasarlos al castellano).
 
 ---
 
@@ -25,6 +36,8 @@ Después arrancamos **MVP 4: PPI del radar** (traducción de los `.pas` de Pasca
 2. **Página `/replay.html?sesion=X`** que reproduce los frames con controles de play/pause/seek/speed.
 3. **Render** equivalente al aula del alumno + radar PPI sobre los datos grabados.
 4. **Limpieza/retención** de replays antiguos para no llenar la BD.
+
+**Avance (2026-09-24)**: el server ya guarda el recorrido de cada buque (un punto cada 5 s, en memoria; ver D17). Para el replay falta persistirlo en la BD junto con el estado completo (telégrafos, timón, rumbo) y la página de reproducción.
 
 **Por qué no es ahora**: trabajo aparte (~1 semana). El MVP funcional para dar un curso ya cierra con VHF + Navtex + DMs (MVP 6.1-6.3). El profesor puede grabar manualmente con OBS o Loom mientras dictamos los primeros cursos, y agregamos replay nativo después.
 
@@ -95,4 +108,4 @@ Documentado en detalle en el manual original sección 3.7. Trabajo estimado: 2-3
 
 ---
 
-*Última actualización: 2026-04-28.*
+*Última actualización: 2026-09-24.*
