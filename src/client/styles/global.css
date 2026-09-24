@@ -967,6 +967,19 @@ output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
   cursor: pointer;
 }
 .instr-agregar { display: flex; gap: 4px; flex-wrap: wrap; }
+.instr-os-vivo { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.instr-conexion { flex: 1 1 100%; }
+.instr-conexion b { padding: 0 3px; color: #fff; background: #c00000; }
+.instr-conexion b[data-conectado="true"] { background: #008000; }
+.instr-os-vivo button {
+  padding: 1px 6px;
+  color: #000;
+  background: linear-gradient(#fff, #ece9d8);
+  border: 1px solid #003c74;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.instr-eventos { margin: 0; padding: 2px 4px 2px 22px; height: 140px; overflow-y: auto; background: #fff; border: 1px solid #7f9db9; }
 .instr-agregar select { flex: 1; min-width: 0; }
 .instr-comm { height: 90px; background: #fff; color: #000; border-color: #7f9db9; }
 .instr-body .comm-time { color: #666; }
@@ -993,3 +1006,16 @@ output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
 .instr-estado span { padding: 1px 6px; border: 1px solid; border-color: var(--xp-oscuro) var(--xp-claro) var(--xp-claro) var(--xp-oscuro); white-space: nowrap; }
 .instr-estado-crece { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 
+/* ---------- Modo observador (profesor viendo a un alumno) ---------- */
+/* Los controles se ven pero no se pueden tocar: el server igual ignora los
+   comandos que no vienen del alumno. */
+.observando .consola-escenario,
+.observando .comm-input,
+.radar-body.observando .radar-controles,
+.radar-body.observando .hud-sliders {
+  pointer-events: none;
+}
+.observando .topbar { box-shadow: inset 0 -3px 0 #e0a000; }
+.observando #sesionTitulo::before, .radar-body.observando .topbar h1::before {
+  content: "👁 ";
+}

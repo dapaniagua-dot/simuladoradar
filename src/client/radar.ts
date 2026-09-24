@@ -18,6 +18,13 @@ interface AulaPayload {
     ownshipIndex: number;
   };
   carta: CartaParseada;
+  observador?: { alumnoNombre: string };
+}
+
+// Lo que el radar del alumno publica para que el profesor lo vea igual.
+interface EstadoRadar {
+  config: PPIConfig;
+  arpa: number[]; // ownshipIndex de los blancos adquiridos
 }
 
 const titulo = document.querySelector('h1') as HTMLHeadingElement;
@@ -32,6 +39,9 @@ let cartaCache: CartaParseada | null = null;
 let ppi: PPI | null = null;
 let socket: Socket | null = null;
 let ultimoTick: TickPayload | null = null;
+// Modo observador: el profesor ve el radar de un alumno ("Show Radar" del
+// Melipal), con la configuración que el alumno tiene en ese momento.
+let observando = false;
 
 const config: PPIConfig = {
   escalaNm: 6,
@@ -88,12 +98,13 @@ async function init(): Promise<void> {
     return;
   }
   const { user } = (await meRes.json()) as LoginResponse;
-  if (user.role !== 'alumno') {
+  const params = new URLSearchParams(location.search);
+  observando = user.role !== 'alumno' && params.get('observar') !== null;
+  if (user.role !== 'alumno' && !observando) {
     location.href = '/dashboard.html';
     return;
   }
 
-  const params = new URLSearchParams(location.search);
   // Embebido dentro del aula: el aula ya tiene su barra superior y el botón
   // "Cerrar" (window.close) no aplica a un iframe, así que se ocultan.
   if (params.get('embebido') === '1') document.body.classList.add('embebido');
@@ -103,17 +114,24 @@ async function init(): Promise<void> {
     return;
   }
 
-  const res = await fetch(`/api/aula/${sesionId}`, { credentials: 'include' });
+  const consulta = observando ? `?observar=${Number(params.get('observar'))}` : '';
+  const res = await fetch(`/api/aula/${sesionId}${consulta}`, { credentials: 'include' });
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { error?: string };
     showError(err.error ?? 'No se pudo entrar al radar');
     return;
   }
-  const { sesion, carta } = (await res.json()) as AulaPayload;
+  const { sesion, carta, observador } = (await res.json()) as AulaPayload;
   miOwnshipIndex = sesion.ownshipIndex;
   cartaCache = carta;
 
-  titulo.firstChild!.nodeValue = `RADAR PPI — ${sesion.nombre} `;
+  titulo.firstChild!.nodeValue = observador
+    ? `RADAR DE ${observador.alumnoNombre.toUpperCase()} (solo lectura) — ${sesion.nombre} `
+    : `RADAR PPI — ${sesion.nombre} `;
+  if (observando) {
+    document.body.classList.add('observando');
+    document.title = `Radar OS-${sesion.ownshipIndex} — ${observador?.alumnoNombre ?? ''}`;
+  }
   ownshipBadge.textContent = `OS-${sesion.ownshipIndex}`;
   ownshipBadge.classList.add('badge-abierta');
 
@@ -241,8 +259,41 @@ function cablearControles(): void {
     s.addEventListener('input', () => {
       el(idValor).textContent = s.value;
       if (campo) config[campo] = Number(s.value);
+      publicarEstado();
     });
   }
+}
+
+// ----- Estado compartido con el profesor ("Show Radar") ------------------------
+let ultimoEnvio = 0;
+let envioPendiente: ReturnType<typeof setTimeout> | null = null;
+
+function publicarEstado(): void {
+  if (observando || !socket) return;
+  // Como mucho 5 envíos por segundo mientras se arrastra una EBL/VRM.
+  const espera = 200 - (Date.now() - ultimoEnvio);
+  if (espera > 0) {
+    envioPendiente ??= setTimeout(() => { envioPendiente = null; publicarEstado(); }, espera);
+    return;
+  }
+  ultimoEnvio = Date.now();
+  const estado: EstadoRadar = { config, arpa: arpa.todos().map((b) => b.ownshipIndex) };
+  socket.emit('radar:estado', estado);
+}
+
+// El observador copia la configuración y los blancos ARPA del alumno.
+function aplicarEstadoAlumno(estado: EstadoRadar): void {
+  Object.assign(config, estado.config);
+  const seguidos = new Set(estado.arpa);
+  for (const b of arpa.todos()) if (!seguidos.has(b.ownshipIndex)) arpa.ceaseTrack(b.id);
+  for (const os of seguidos) arpa.adquirirOwnship(os);
+  for (const [idSlider, idValor, campo] of [
+    ['sliderGain', 'valGain', 'ganancia'], ['sliderTune', 'valTune', 'sintonia'], ['sliderSea', 'valSea', 'mar'],
+  ] as const) {
+    el<HTMLInputElement>(idSlider).value = String(config[campo]);
+    el(idValor).textContent = String(config[campo]);
+  }
+  refrescarPanel();
 }
 
 function cambiarEscala(sentido: number): void {
@@ -287,6 +338,7 @@ function refrescarPanel(): void {
   presionado(el('btnStandby'), !config.transmitiendo);
   presionado(el('btnTransmit'), config.transmitiendo);
   canvas.style.cursor = modoClick === 'normal' ? 'crosshair' : 'cell';
+  publicarEstado();
 }
 
 function actualizarValoresMarcas(): void {
@@ -330,17 +382,19 @@ function cablearPPI(): void {
     if (marcaSeleccionada.tipo === 'ebl') config.ebl[marcaSeleccionada.i].bearingTrue = p.bearingTrue;
     else config.vrm[marcaSeleccionada.i].rangoNm = Math.max(0.01, Math.min(config.escalaNm, p.distNm));
     actualizarValoresMarcas();
+    publicarEstado();
   };
 
   canvas.addEventListener('mousedown', (e) => {
     const p = polarDesdeMouse(e);
-    if (!p) return;
+    if (!p || observando) return;
     if (modoClick === 'adquirir') {
       const idx = buqueMasCercano(p.bearingTrue, p.distNm);
       if (idx !== null) {
         arpa.adquirirOwnship(idx);
         nuevoBlancoHasta = Date.now() + 5000;
       }
+      publicarEstado();
       modoClick = 'normal';
       refrescarPanel();
       return;
@@ -397,11 +451,18 @@ function buqueMasCercano(bearingTrue: number, distNm: number): number | null {
 
 // ----- Datos en vivo ----------------------------------------------------------
 function conectarSocket(): void {
-  socket = io({ auth: { sesionId }, withCredentials: true });
+  socket = io({ auth: { sesionId, vista: 'radar' }, withCredentials: true });
   socket.on('connect', () => {
     connBadge.textContent = 'conectado';
     connBadge.className = 'badge badge-abierta';
+    publicarEstado();
   });
+  socket.on('radar:estado', (m: { ownshipIndex: number; estado: EstadoRadar }) => {
+    if (observando && m.ownshipIndex === miOwnshipIndex) aplicarEstadoAlumno(m.estado);
+  });
+  // Reenvío periódico: un profesor que abre "Show Radar" después ve el
+  // estado actual sin esperar a que el alumno toque algo.
+  if (!observando) setInterval(publicarEstado, 2000);
   socket.on('connect_error', (err) => {
     connBadge.textContent = 'error: ' + err.message;
     connBadge.className = 'badge badge-finalizada';

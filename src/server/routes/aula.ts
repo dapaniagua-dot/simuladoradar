@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { sesiones, escenarios, participaciones } from '../db/schema.js';
-import { requireAuth, requireRole } from '../middleware/requireAuth.js';
+import { sesiones, escenarios, participaciones, users } from '../db/schema.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { parseMapFile } from '../cartas/mapParser.js';
 
 export const aulaRouter: Router = Router();
@@ -21,13 +21,27 @@ aulaRouter.use(requireAuth);
 //   2) el alumno está asignado a esa sesión
 //   3) la sesión está en estado 'abierta'
 // Si todo pasa, devuelve la carta parseada + datos de la sesión + ownshipIndex.
-aulaRouter.get('/:sesionId', requireRole('alumno'), async (req, res) => {
+//
+// Con ?observar=N lo usa el profesor dueño de la sesión (o un admin) para ver
+// en vivo el aula o el radar del buque OS-N ("Show Radar" del Melipal). Es
+// solo lectura: el server ignora los comandos que no vienen del alumno.
+aulaRouter.get('/:sesionId', async (req, res) => {
   const sesionId = Number(req.params.sesionId);
   if (!Number.isFinite(sesionId)) {
     res.status(400).json({ error: 'ID inválido' });
     return;
   }
   const me = req.user!;
+  const observar = req.query.observar !== undefined ? Number(req.query.observar) : null;
+
+  if (me.role !== 'alumno') {
+    if (observar === null || !Number.isInteger(observar)) {
+      res.status(400).json({ error: 'Falta el buque a observar (?observar=N)' });
+      return;
+    }
+    await responderObservador(res, sesionId, observar, me);
+    return;
+  }
 
   const rows = await db
     .select({
@@ -81,3 +95,55 @@ aulaRouter.get('/:sesionId', requireRole('alumno'), async (req, res) => {
     carta,
   });
 });
+
+// Aula en modo observador: mismo payload que ve el alumno del buque OS-N, más
+// el nombre del alumno para mostrarlo en la barra.
+async function responderObservador(
+  res: import('express').Response,
+  sesionId: number,
+  ownshipIndex: number,
+  me: { id: number; role: string },
+): Promise<void> {
+  const rows = await db
+    .select({
+      sesionNombre: sesiones.nombre,
+      sesionDescripcion: sesiones.descripcion,
+      sesionEstado: sesiones.estado,
+      profesorId: sesiones.profesorId,
+      escenarioNombre: escenarios.nombre,
+      escenarioSlug: escenarios.slug,
+      alumnoNombre: users.nombre,
+    })
+    .from(participaciones)
+    .innerJoin(sesiones, eq(participaciones.sesionId, sesiones.id))
+    .innerJoin(escenarios, eq(sesiones.escenarioId, escenarios.id))
+    .innerJoin(users, eq(participaciones.alumnoId, users.id))
+    .where(and(eq(participaciones.sesionId, sesionId), eq(participaciones.ownshipIndex, ownshipIndex)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    res.status(404).json({ error: `No hay buque OS-${ownshipIndex} en esta sesión` });
+    return;
+  }
+  if (me.role !== 'admin' && row.profesorId !== me.id) {
+    res.status(403).json({ error: 'Solo el profesor de la sesión puede observar a sus alumnos' });
+    return;
+  }
+  if (row.sesionEstado !== 'abierta') {
+    res.status(403).json({ error: `La sesión está en estado '${row.sesionEstado}', no abierta` });
+    return;
+  }
+  const cartasDir = path.resolve(__dirname, '../../../public/cartas');
+  const carta = await parseMapFile(path.join(cartasDir, row.escenarioSlug, 'carta.map'), `/cartas/${row.escenarioSlug}/carta.png`);
+  res.json({
+    sesion: {
+      id: sesionId,
+      nombre: row.sesionNombre,
+      descripcion: row.sesionDescripcion,
+      escenarioNombre: row.escenarioNombre,
+      ownshipIndex,
+    },
+    carta,
+    observador: { alumnoNombre: row.alumnoNombre },
+  });
+}
