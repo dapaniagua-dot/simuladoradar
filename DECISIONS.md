@@ -212,6 +212,19 @@ En la carta, el alumno elige cada cuánto dibujar un punto (5 s a 5 min), puede 
 
 ---
 
+## D19. Show Radar / Show Console del instructor
+
+**Decidido (2026-09-24, pedido de Diego):** como en el Melipal (pestaña Radar de cada Own Ship y la PC de radar del instructor), el profesor abre en vivo el **radar** o el **aula** de cualquier alumno desde su fila en Own Ships.
+
+- **Acceso:** `/radar.html` y `/aula.html` con `?observar=N`. El endpoint `/api/aula/:id?observar=N` solo lo acepta el profesor dueño de la sesión o un admin, y con la sesión abierta.
+- **Solo lectura:** los controles se ven pero no se pueden tocar; además el server ya ignora los comandos que no vienen del alumno.
+- **Radar igual al del alumno:** el radar del alumno publica su configuración (escala, modo, EBL/VRM, controles, blancos ARPA) por socket (`radar:estado`, al cambiar y cada 2 s) y el observador la copia.
+- **Presencia:** el server cuenta qué pantallas tiene abiertas cada alumno (aula / radar) y avisa al instructor; la sección Connections muestra "Seeing Radar from Post" y el registro de eventos.
+
+**Pendiente (3b):** fallas inducidas (GPS, giro, corredera, autopiloto, máquina, radar, sector ciego, ecos falsos, perder blancos ARPA) y tomar el control de un buque.
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.
