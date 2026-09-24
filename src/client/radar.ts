@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
-import { PPI, ESCALAS_NM, type EscalaNm, type PPIMode } from './radar/ppi.js';
+import { PPI, ESCALAS_NM, ANILLOS_NM, esPeligroso, type PPIConfig, type PPIMode } from './radar/ppi.js';
 import { ArpaTracker, type DatosArpa } from './radar/arpa.js';
 import { latLonAMillasRel } from './radar/coords.js';
 import type {
@@ -21,17 +21,10 @@ interface AulaPayload {
 }
 
 const titulo = document.querySelector('h1') as HTMLHeadingElement;
-const ownshipBadge = document.getElementById('ownshipBadge') as HTMLSpanElement;
-const connBadge = document.getElementById('connBadge') as HTMLSpanElement;
-const loadingMsg = document.getElementById('loadingMsg') as HTMLDivElement;
-const canvas = document.getElementById('ppiCanvas') as HTMLCanvasElement;
-const rangeGrid = document.getElementById('rangeGrid') as HTMLDivElement;
-const modeNorthBtn = document.getElementById('modeNorth') as HTMLButtonElement;
-const modeHeadBtn = document.getElementById('modeHead') as HTMLButtonElement;
-const hdgVal = document.getElementById('hdgVal') as HTMLSpanElement;
-const spdVal = document.getElementById('spdVal') as HTMLSpanElement;
-const posLatVal = document.getElementById('posLatVal') as HTMLSpanElement;
-const posLonVal = document.getElementById('posLonVal') as HTMLSpanElement;
+const ownshipBadge = el<HTMLSpanElement>('ownshipBadge');
+const connBadge = el<HTMLSpanElement>('connBadge');
+const loadingMsg = el<HTMLDivElement>('loadingMsg');
+const canvas = el<HTMLCanvasElement>('ppiCanvas');
 
 let sesionId = 0;
 let miOwnshipIndex = 0;
@@ -40,22 +33,53 @@ let ppi: PPI | null = null;
 let socket: Socket | null = null;
 let ultimoTick: TickPayload | null = null;
 
-type EblMode = 'TRUE' | 'RELATIVE';
-
-const config = {
-  escalaNm: 6 as EscalaNm,
-  mode: 'NORTH_UP' as PPIMode,
-  eblActive: false,
-  eblBearingTrue: 0,
-  vrmActive: false,
-  vrmRangeNm: 1,
+const config: PPIConfig = {
+  escalaNm: 6,
+  mode: 'NORTH_UP',
+  courseUpDeg: 0,
+  ebl: [{ activa: false, bearingTrue: 0 }, { activa: false, bearingTrue: 45 }],
+  vrm: [{ activa: false, rangoNm: 1 }, { activa: false, rangoNm: 2 }],
+  anillos: true,
+  marcaProa: true,
+  marcaPopa: false,
+  escalaMarcaciones: true,
+  lineaBarrido: true,
+  colorNoche: false,
+  transmitiendo: true,
+  ganancia: 75,
+  sintonia: 76,
+  mar: 50,
+  autoClutter: false,
+  arpaVisible: true,
+  vector: 'TRUE',
+  vectorMin: 6,
+  cpaLimiteNm: 2,
+  tcpaLimiteMin: 15,
+  mostrarLimiteCpa: false,
 };
 
-let eblMode: EblMode = 'TRUE';
+// Rango de cada límite ajustable con los botones - / +.
+const LIMITES = {
+  vectorMin: { paso: 1, min: 1, max: 30, decimales: 0 },
+  cpaLimiteNm: { paso: 0.1, min: 0.1, max: 5, decimales: 1 },
+  tcpaLimiteMin: { paso: 1, min: 1, max: 60, decimales: 0 },
+} as const;
+type Limite = keyof typeof LIMITES;
+
+type Marca = { tipo: 'ebl' | 'vrm'; i: 0 | 1 };
+// La EBL/VRM que se mueve al arrastrar sobre el PPI (la última encendida).
+let marcaSeleccionada: Marca | null = null;
+type ModoClick = 'normal' | 'adquirir' | 'cesar';
+let modoClick: ModoClick = 'normal';
 
 const arpa = new ArpaTracker();
-let arpaAcquireMode = false; // true = el siguiente click adquiere un blanco
 let arpaTargets: DatosArpa[] = [];
+
+// Alarmas: la de colisión se reconoce con un click (deja de titilar) hasta
+// que la situación se normaliza; "new target" se enciende unos segundos.
+let colisionReconocida = false;
+let nuevoBlancoHasta = 0;
+let blancoPerdido = false;
 
 async function init(): Promise<void> {
   const meRes = await fetch('/api/auth/me', { credentials: 'include' });
@@ -70,6 +94,9 @@ async function init(): Promise<void> {
   }
 
   const params = new URLSearchParams(location.search);
+  // Embebido dentro del aula: el aula ya tiene su barra superior y el botón
+  // "Cerrar" (window.close) no aplica a un iframe, así que se ocultan.
+  if (params.get('embebido') === '1') document.body.classList.add('embebido');
   sesionId = Number(params.get('sesion'));
   if (!Number.isFinite(sesionId) || sesionId <= 0) {
     showError('Falta el ID de la sesión en la URL');
@@ -95,291 +122,280 @@ async function init(): Promise<void> {
   ppi = new PPI(canvas);
   ppi.resize();
 
-  construirControlesEscala();
   cablearControles();
+  cablearPPI();
+  refrescarPanel();
   conectarSocket();
   loop();
 }
 
-function construirControlesEscala(): void {
-  rangeGrid.innerHTML = '';
-  for (const escala of ESCALAS_NM) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn-sm range-btn';
-    btn.textContent = escala < 1 ? escala.toFixed(2) : `${escala}`;
-    btn.dataset.value = String(escala);
-    if (escala === config.escalaNm) btn.classList.add('active');
-    btn.addEventListener('click', () => {
-      if (config.escalaNm === escala) return;
-      config.escalaNm = escala;
-      // Los ecos viejos están dibujados a la escala anterior; los borramos
-      // para que solo se vean los nuevos a la nueva escala.
-      ppi?.clearEchoes();
-      [...rangeGrid.querySelectorAll('.range-btn')].forEach((b) =>
-        b.classList.toggle('active', (b as HTMLElement).dataset.value === String(escala)),
-      );
-    });
-    rangeGrid.appendChild(btn);
-  }
-}
-
+// ----- Panel de control -------------------------------------------------------
 function cablearControles(): void {
-  modeNorthBtn.addEventListener('click', () => {
-    if (config.mode === 'NORTH_UP') return;
-    config.mode = 'NORTH_UP';
-    ppi?.clearEchoes();
-    modeNorthBtn.classList.add('active');
-    modeHeadBtn.classList.remove('active');
-  });
-  modeHeadBtn.addEventListener('click', () => {
-    if (config.mode === 'HEAD_UP') return;
-    config.mode = 'HEAD_UP';
-    ppi?.clearEchoes();
-    modeHeadBtn.classList.add('active');
-    modeNorthBtn.classList.remove('active');
-  });
+  // RANGE + / -
+  el('rangeMas').addEventListener('click', () => cambiarEscala(+1));
+  el('rangeMenos').addEventListener('click', () => cambiarEscala(-1));
 
-  cablearEBL();
-  cablearVRM();
-  cablearARPA();
-}
-
-function cablearARPA(): void {
-  const btnAcquire = document.getElementById('btnArpaAcquire') as HTMLButtonElement;
-  const btnCeaseAll = document.getElementById('btnArpaCeaseAll') as HTMLButtonElement;
-  const canvas = document.getElementById('ppiCanvas') as HTMLCanvasElement;
-
-  btnAcquire.addEventListener('click', () => {
-    arpaAcquireMode = !arpaAcquireMode;
-    btnAcquire.classList.toggle('active', arpaAcquireMode);
-    btnAcquire.textContent = arpaAcquireMode ? 'CLICK ECO ROJO…' : 'ACQUIRE';
-    canvas.style.cursor = arpaAcquireMode ? 'crosshair' : '';
-  });
-
-  btnCeaseAll.addEventListener('click', () => {
-    arpa.ceaseAll();
-    refrescarListaArpa();
-  });
-
-  canvas.addEventListener('mousedown', (e) => {
-    if (!arpaAcquireMode) return;
-    const mio = miBuque();
-    if (!mio) return;
-    const rect = canvas.getBoundingClientRect();
-    const dx = e.clientX - rect.left - rect.width / 2;
-    const dy = e.clientY - rect.top - rect.height / 2;
-    const radius = Math.min(rect.width, rect.height) / 2 - 30;
-    const pixelsPorMilla = radius / config.escalaNm;
-
-    // Convertir el click a (xE, yN) millas relativas al barco propio.
-    let bearingPantalla = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-    bearingPantalla = ((bearingPantalla % 360) + 360) % 360;
-    let bearingTrue = bearingPantalla;
-    if (config.mode === 'HEAD_UP') {
-      bearingTrue = (bearingPantalla + mio.headingDeg + 360) % 360;
-    }
-    const distNm = Math.hypot(dx, dy) / pixelsPorMilla;
-    const xE = Math.sin((bearingTrue * Math.PI) / 180) * distNm;
-    const yN = Math.cos((bearingTrue * Math.PI) / 180) * distNm;
-
-    // Buscar el OwnShip más cercano al click (umbral 0.5 nm).
-    let mejor: { idx: number; dist: number } | null = null;
-    for (const b of otrosBuques()) {
-      const rel = latLonAMillasRel(b.lat, b.lon, mio.lat, mio.lon);
-      const d = Math.hypot(rel.xE - xE, rel.yN - yN);
-      if (d < 0.5 && (!mejor || d < mejor.dist)) {
-        mejor = { idx: b.ownshipIndex, dist: d };
-      }
-    }
-    if (mejor) {
-      arpa.adquirirOwnship(mejor.idx);
-      refrescarListaArpa();
-    }
-
-    // Salir del modo acquire después de un click (success o no).
-    arpaAcquireMode = false;
-    btnAcquire.classList.remove('active');
-    btnAcquire.textContent = 'ACQUIRE';
-    canvas.style.cursor = '';
-  });
-}
-
-function refrescarListaArpa(): void {
-  const list = document.getElementById('arpaList') as HTMLDivElement;
-  if (arpaTargets.length === 0) {
-    list.innerHTML = `<p class="placeholder ebl-tip">Sin blancos. Click ACQUIRE y después click sobre un eco rojo del PPI.</p>`;
-    return;
-  }
-  list.innerHTML = '';
-  for (const t of arpaTargets) {
-    const peligro = t.cpaNm !== null && t.cpaNm < 0.5 && t.tcpaMin !== null && t.tcpaMin > 0;
-    const row = document.createElement('div');
-    row.className = `arpa-row${peligro ? ' arpa-peligro' : ''}`;
-    const courseStr = Number.isFinite(t.courseDeg) ? `${t.courseDeg.toFixed(0)}°` : '—';
-    const cpaStr = t.cpaNm !== null ? `${t.cpaNm.toFixed(2)} nm` : '—';
-    const tcpaStr = t.tcpaMin !== null ? `${t.tcpaMin.toFixed(1)} min` : '—';
-    row.innerHTML = `
-      <div class="arpa-row-head">
-        <strong>${t.id}</strong>
-        <button type="button" class="btn-cease" data-id="${t.id}">×</button>
-      </div>
-      <div class="arpa-row-body">
-        <span>BRG ${t.bearingTrue.toFixed(0)}°T</span>
-        <span>RNG ${t.rangeNm.toFixed(2)}nm</span>
-        <span>CRS ${courseStr}</span>
-        <span>SPD ${t.speedKn.toFixed(1)}kn</span>
-        <span>CPA ${cpaStr}</span>
-        <span>TCPA ${tcpaStr}</span>
-      </div>
-    `;
-    list.appendChild(row);
-  }
-  list.querySelectorAll('.btn-cease').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.id!;
-      arpa.ceaseTrack(id);
-      refrescarListaArpa();
+  // Modo de presentación
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.rb-modo')) {
+    btn.addEventListener('click', () => {
+      config.mode = btn.dataset.modo as PPIMode;
+      // Course Up fija "arriba" en el rumbo del momento en que se elige.
+      if (config.mode === 'COURSE_UP') config.courseUpDeg = miBuque()?.headingDeg ?? 0;
+      refrescarPanel();
     });
-  });
-}
+  }
 
-function cablearVRM(): void {
-  const btnVrm = document.getElementById('btnVrm') as HTMLButtonElement;
-  const vrmControls = document.getElementById('vrmControls') as HTMLDivElement;
-  const vrmRangeInput = document.getElementById('vrmRangeInput') as HTMLInputElement;
+  // Opciones de sí/no (RINGS, HEAD MARKER, NIGHT COLORS, ARPA, AUTO CLUTTER…)
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.rb-toggle')) {
+    btn.addEventListener('click', () => {
+      const op = btn.dataset.opcion as keyof PPIConfig;
+      (config as unknown as Record<string, boolean>)[op] = !config[op];
+      refrescarPanel();
+    });
+  }
 
-  btnVrm.addEventListener('click', () => {
-    config.vrmActive = !config.vrmActive;
-    btnVrm.classList.toggle('active', config.vrmActive);
-    btnVrm.textContent = config.vrmActive ? 'VRM ON' : 'VRM OFF';
-    vrmControls.hidden = !config.vrmActive;
-  });
-
-  vrmRangeInput.addEventListener('input', () => {
-    const v = Number(vrmRangeInput.value);
-    if (!Number.isFinite(v) || v <= 0) return;
-    config.vrmRangeNm = Math.min(48, v);
-  });
-
-  // Click + drag en el canvas: el radio del VRM = distancia del cursor al
-  // centro del PPI, convertida a millas.
-  const canvas = document.getElementById('ppiCanvas') as HTMLCanvasElement;
-  let dragging = false;
-  const onMove = (clientX: number, clientY: number): void => {
-    if (!config.vrmActive) return;
-    const rect = canvas.getBoundingClientRect();
-    const dx = clientX - rect.left - rect.width / 2;
-    const dy = clientY - rect.top - rect.height / 2;
-    const distPx = Math.hypot(dx, dy);
-    if (distPx < 6) return;
-    // pixelsPorMilla en el cliente: el PPI usa radius = (size/2 - 30).
-    // Replicamos el cálculo aquí para no acoplarnos a la clase PPI.
-    const radius = Math.min(rect.width, rect.height) / 2 - 30;
-    const pixelsPorMilla = radius / config.escalaNm;
-    if (pixelsPorMilla <= 0) return;
-    const rangeNm = distPx / pixelsPorMilla;
-    config.vrmRangeNm = Math.max(0.01, Math.min(config.escalaNm, rangeNm));
-  };
-
-  canvas.addEventListener('mousedown', (e) => {
-    if (!config.vrmActive) return;
-    // Si EBL también está activo, EBL gana en este click (ya tiene su propio
-    // listener). Una solución sería un mode picker, pero para MVP lo dejamos
-    // así: el handler del EBL se dispara primero por orden de cablear.
-    dragging = true;
-    onMove(e.clientX, e.clientY);
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    onMove(e.clientX, e.clientY);
-  });
-  window.addEventListener('mouseup', () => {
-    dragging = false;
-  });
-}
-
-function cablearEBL(): void {
-  const btnEbl = document.getElementById('btnEbl') as HTMLButtonElement;
-  const eblControls = document.getElementById('eblControls') as HTMLDivElement;
-  const eblBearingInput = document.getElementById('eblBearingInput') as HTMLInputElement;
-  const eblModeTrue = document.getElementById('eblModeTrue') as HTMLButtonElement;
-  const eblModeRelative = document.getElementById('eblModeRelative') as HTMLButtonElement;
-
-  btnEbl.addEventListener('click', () => {
-    config.eblActive = !config.eblActive;
-    btnEbl.classList.toggle('active', config.eblActive);
-    btnEbl.textContent = config.eblActive ? 'EBL ON' : 'EBL OFF';
-    eblControls.hidden = !config.eblActive;
-  });
-
-  eblBearingInput.addEventListener('input', () => {
-    const v = Number(eblBearingInput.value);
-    if (!Number.isFinite(v)) return;
-    const userBearing = ((v % 360) + 360) % 360;
-    config.eblBearingTrue = eblMode === 'TRUE' ? userBearing : userBearingToTrue(userBearing);
-  });
-
-  eblModeTrue.addEventListener('click', () => {
-    eblMode = 'TRUE';
-    eblModeTrue.classList.add('active');
-    eblModeRelative.classList.remove('active');
-  });
-  eblModeRelative.addEventListener('click', () => {
-    eblMode = 'RELATIVE';
-    eblModeRelative.classList.add('active');
-    eblModeTrue.classList.remove('active');
-  });
-
-  // Click + drag en el canvas del PPI para apuntar el EBL al cursor.
-  // Los radares reales usan trackball; con mouse esto es la traducción natural.
-  const canvas = document.getElementById('ppiCanvas') as HTMLCanvasElement;
-  let dragging = false;
-  const onMove = (clientX: number, clientY: number): void => {
-    if (!config.eblActive) return;
-    const rect = canvas.getBoundingClientRect();
-    const dx = clientX - rect.left - rect.width / 2;
-    const dy = clientY - rect.top - rect.height / 2;
-    if (Math.hypot(dx, dy) < 8) return; // ignorar clicks muy cerca del centro
-    // ángulo de pantalla: 0 = arriba, sentido horario, 0..360
-    let bearingPantalla = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-    bearingPantalla = ((bearingPantalla % 360) + 360) % 360;
-    // En Head Up, "arriba en pantalla" representa la proa (heading), así que
-    // hay que sumar el heading actual para obtener el bearing TRUE.
-    let bearingTrue = bearingPantalla;
-    if (config.mode === 'HEAD_UP') {
-      const heading = miBuque()?.headingDeg ?? 0;
-      bearingTrue = (bearingPantalla + heading + 360) % 360;
+  // EBL / VRM: el botón enciende/apaga; - / + ajustan el valor.
+  for (const fila of document.querySelectorAll<HTMLElement>('.rp-marca')) {
+    const marca: Marca = { tipo: fila.dataset.tipo as Marca['tipo'], i: Number(fila.dataset.i) as 0 | 1 };
+    const obj = marca.tipo === 'ebl' ? config.ebl[marca.i] : config.vrm[marca.i];
+    fila.querySelector<HTMLButtonElement>(':scope > .rb')!.addEventListener('click', () => {
+      obj.activa = !obj.activa;
+      marcaSeleccionada = obj.activa ? marca : null;
+      refrescarPanel();
+    });
+    for (const b of fila.querySelectorAll<HTMLButtonElement>('[data-paso]')) {
+      b.addEventListener('click', () => {
+        const paso = Number(b.dataset.paso);
+        marcaSeleccionada = marca;
+        if (marca.tipo === 'ebl') {
+          config.ebl[marca.i].bearingTrue = norm360(config.ebl[marca.i].bearingTrue + paso);
+        } else {
+          const delta = config.escalaNm / 60;
+          config.vrm[marca.i].rangoNm = Math.max(0.01, Math.min(config.escalaNm, config.vrm[marca.i].rangoNm + paso * delta));
+        }
+        refrescarPanel();
+      });
     }
-    config.eblBearingTrue = bearingTrue;
+  }
+
+  // Pestañas
+  for (const grupo of document.querySelectorAll<HTMLElement>('.rp-tabs')) {
+    for (const tab of grupo.querySelectorAll<HTMLButtonElement>('.rp-tab')) {
+      tab.addEventListener('click', () => {
+        for (const t of grupo.querySelectorAll('.rp-tab')) t.setAttribute('aria-selected', String(t === tab));
+        for (const p of grupo.querySelectorAll<HTMLElement>('.rp-tab-pagina')) p.hidden = p.dataset.tab !== tab.dataset.tab;
+      });
+    }
+  }
+
+  // ARPA
+  el('btnAcquire').addEventListener('click', () => {
+    modoClick = modoClick === 'adquirir' ? 'normal' : 'adquirir';
+    refrescarPanel();
+  });
+  el('btnCease').addEventListener('click', () => {
+    modoClick = modoClick === 'cesar' ? 'normal' : 'cesar';
+    refrescarPanel();
+  });
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.rb-vector')) {
+    btn.addEventListener('click', () => {
+      config.vector = btn.dataset.vector as PPIConfig['vector'];
+      refrescarPanel();
+    });
+  }
+  for (const caja of document.querySelectorAll<HTMLElement>('.rp-limite')) {
+    const nombre = caja.dataset.limite as Limite;
+    for (const b of caja.querySelectorAll<HTMLButtonElement>('[data-paso]')) {
+      b.addEventListener('click', () => {
+        const lim = LIMITES[nombre];
+        const v = config[nombre] + Number(b.dataset.paso) * lim.paso;
+        config[nombre] = Math.round(Math.max(lim.min, Math.min(lim.max, v)) * 10) / 10;
+        refrescarPanel();
+      });
+    }
+  }
+
+  // Alarmas: click = reconocer.
+  el('alarmaColision').addEventListener('click', () => { colisionReconocida = true; });
+  el('alarmaNuevo').addEventListener('click', () => { nuevoBlancoHasta = 0; });
+  el('alarmaPerdido').addEventListener('click', () => { blancoPerdido = false; });
+
+  // Transmisor
+  el('btnStandby').addEventListener('click', () => { config.transmitiendo = false; refrescarPanel(); });
+  el('btnTransmit').addEventListener('click', () => { config.transmitiendo = true; refrescarPanel(); });
+  el('btnInterf').addEventListener('click', (e) => {
+    const b = e.currentTarget as HTMLButtonElement;
+    b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+  });
+
+  // Controles de señal
+  const sliders: [string, string, 'ganancia' | 'sintonia' | 'mar' | null][] = [
+    ['sliderGain', 'valGain', 'ganancia'],
+    ['sliderTune', 'valTune', 'sintonia'],
+    ['sliderSea', 'valSea', 'mar'],
+    // No modelamos lluvia todavía: el control se ve pero no cambia la imagen.
+    ['sliderRain', 'valRain', null],
+  ];
+  for (const [idSlider, idValor, campo] of sliders) {
+    const s = el<HTMLInputElement>(idSlider);
+    s.addEventListener('input', () => {
+      el(idValor).textContent = s.value;
+      if (campo) config[campo] = Number(s.value);
+    });
+  }
+}
+
+function cambiarEscala(sentido: number): void {
+  const i = ESCALAS_NM.indexOf(config.escalaNm);
+  const nuevo = ESCALAS_NM[Math.max(0, Math.min(ESCALAS_NM.length - 1, i + sentido))]!;
+  config.escalaNm = nuevo;
+  refrescarPanel();
+}
+
+// Pinta el estado de todos los botones y valores del panel según config.
+function refrescarPanel(): void {
+  el('rangeDisplay').textContent = formatEscala(config.escalaNm);
+  el('hudRange').textContent = formatEscala(config.escalaNm);
+  el('hudRings').textContent = formatEscala(ANILLOS_NM[config.escalaNm]);
+  el('hudModo').textContent = { NORTH_UP: 'NORTH UP', HEAD_UP: 'HEAD UP', COURSE_UP: 'COURSE UP' }[config.mode];
+
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.rb-modo')) {
+    presionado(btn, btn.dataset.modo === config.mode);
+  }
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.rb-toggle')) {
+    presionado(btn, Boolean(config[btn.dataset.opcion as keyof PPIConfig]));
+  }
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.rb-vector')) {
+    presionado(btn, btn.dataset.vector === config.vector);
+  }
+  for (const fila of document.querySelectorAll<HTMLElement>('.rp-marca')) {
+    const i = Number(fila.dataset.i) as 0 | 1;
+    const esEbl = fila.dataset.tipo === 'ebl';
+    const activa = esEbl ? config.ebl[i].activa : config.vrm[i].activa;
+    presionado(fila.querySelector<HTMLButtonElement>(':scope > .rb')!, activa);
+    fila.querySelector<HTMLElement>('.rp-marca-valor')!.hidden = !activa;
+    fila.classList.toggle('seleccionada',
+      marcaSeleccionada?.tipo === fila.dataset.tipo && marcaSeleccionada?.i === i);
+  }
+  actualizarValoresMarcas();
+  for (const caja of document.querySelectorAll<HTMLElement>('.rp-limite')) {
+    const nombre = caja.dataset.limite as Limite;
+    caja.querySelector('.rp-verde')!.textContent = config[nombre].toFixed(LIMITES[nombre].decimales);
+  }
+  presionado(el('btnAcquire'), modoClick === 'adquirir');
+  presionado(el('btnCease'), modoClick === 'cesar');
+  presionado(el('btnStandby'), !config.transmitiendo);
+  presionado(el('btnTransmit'), config.transmitiendo);
+  canvas.style.cursor = modoClick === 'normal' ? 'crosshair' : 'cell';
+}
+
+function actualizarValoresMarcas(): void {
+  const heading = miBuque()?.headingDeg ?? 0;
+  for (const fila of document.querySelectorAll<HTMLElement>('.rp-marca')) {
+    const i = Number(fila.dataset.i) as 0 | 1;
+    const valor = fila.querySelector('.rp-verde')!;
+    if (fila.dataset.tipo === 'ebl') {
+      const t = config.ebl[i].bearingTrue;
+      valor.textContent = `${fmt3(t)} / ${fmt3(norm360(t - heading))}`;
+    } else {
+      valor.textContent = config.vrm[i].rangoNm.toFixed(2);
+    }
+  }
+}
+
+function presionado(btn: HTMLElement, si: boolean): void {
+  btn.setAttribute('aria-pressed', String(si));
+}
+
+// ----- Interacción con el PPI ------------------------------------------------
+// Traduce una posición del mouse a marcación verdadera y distancia (millas).
+function polarDesdeMouse(e: MouseEvent): { bearingTrue: number; distNm: number; distPx: number } | null {
+  if (!ppi) return null;
+  const rect = canvas.getBoundingClientRect();
+  const { cx, cy, radio } = ppi.geometria();
+  const dx = e.clientX - rect.left - cx;
+  const dy = e.clientY - rect.top - cy;
+  const distPx = Math.hypot(dx, dy);
+  const pantalla = norm360((Math.atan2(dx, -dy) * 180) / Math.PI);
+  const bearingTrue = norm360(pantalla + PPI.rotacion(config, miBuque()));
+  return { bearingTrue, distNm: (distPx / radio) * config.escalaNm, distPx };
+}
+
+function cablearPPI(): void {
+  let arrastrando = false;
+
+  const moverMarca = (e: MouseEvent) => {
+    const p = polarDesdeMouse(e);
+    if (!p || !marcaSeleccionada || p.distPx < 6) return;
+    if (marcaSeleccionada.tipo === 'ebl') config.ebl[marcaSeleccionada.i].bearingTrue = p.bearingTrue;
+    else config.vrm[marcaSeleccionada.i].rangoNm = Math.max(0.01, Math.min(config.escalaNm, p.distNm));
+    actualizarValoresMarcas();
   };
 
   canvas.addEventListener('mousedown', (e) => {
-    if (!config.eblActive) return;
-    dragging = true;
-    onMove(e.clientX, e.clientY);
+    const p = polarDesdeMouse(e);
+    if (!p) return;
+    if (modoClick === 'adquirir') {
+      const idx = buqueMasCercano(p.bearingTrue, p.distNm);
+      if (idx !== null) {
+        arpa.adquirirOwnship(idx);
+        nuevoBlancoHasta = Date.now() + 5000;
+      }
+      modoClick = 'normal';
+      refrescarPanel();
+      return;
+    }
+    if (modoClick === 'cesar') {
+      const idx = buqueMasCercano(p.bearingTrue, p.distNm);
+      if (idx !== null) arpa.ceaseTrack(`T-${idx}`);
+      modoClick = 'normal';
+      refrescarPanel();
+      return;
+    }
+    const m = marcaSeleccionada;
+    if (m && (m.tipo === 'ebl' ? config.ebl[m.i].activa : config.vrm[m.i].activa)) {
+      arrastrando = true;
+      moverMarca(e);
+    }
   });
   window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    onMove(e.clientX, e.clientY);
+    if (arrastrando) moverMarca(e);
   });
-  window.addEventListener('mouseup', () => {
-    dragging = false;
+  window.addEventListener('mouseup', () => { arrastrando = false; });
+
+  // MARKER INFO: distancia, marcación y posición del cursor.
+  canvas.addEventListener('mousemove', (e) => {
+    const p = polarDesdeMouse(e);
+    const mio = miBuque();
+    if (!p || !mio) return;
+    el('hudMarkerRange').textContent = p.distNm.toFixed(2);
+    el('hudMarkerBearing').textContent = p.bearingTrue.toFixed(1);
+    const yN = Math.cos((p.bearingTrue * Math.PI) / 180) * p.distNm;
+    const xE = Math.sin((p.bearingTrue * Math.PI) / 180) * p.distNm;
+    const lat = mio.lat + yN / 60;
+    const lon = mio.lon + xE / (60 * Math.cos((mio.lat * Math.PI) / 180));
+    el('hudMarkerLat').textContent = formatDMS(lat, true);
+    el('hudMarkerLon').textContent = formatDMS(lon, false);
   });
 }
 
-// Convierte bearing relativo (0 = proa) a TRUE (0 = norte) usando el heading actual.
-function userBearingToTrue(bearingRel: number): number {
-  const heading = miBuque()?.headingDeg ?? 0;
-  return ((bearingRel + heading) % 360 + 360) % 360;
+// Buque (ownshipIndex) más cercano a un punto del PPI, a menos de ~15 px.
+function buqueMasCercano(bearingTrue: number, distNm: number): number | null {
+  const mio = miBuque();
+  if (!mio || !ppi) return null;
+  const xE = Math.sin((bearingTrue * Math.PI) / 180) * distNm;
+  const yN = Math.cos((bearingTrue * Math.PI) / 180) * distNm;
+  const umbralNm = (15 / ppi.geometria().radio) * config.escalaNm;
+  let mejor: { idx: number; d: number } | null = null;
+  for (const b of otrosBuques()) {
+    const rel = latLonAMillasRel(b.lat, b.lon, mio.lat, mio.lon);
+    const d = Math.hypot(rel.xE - xE, rel.yN - yN);
+    if (d < umbralNm && (!mejor || d < mejor.d)) mejor = { idx: b.ownshipIndex, d };
+  }
+  return mejor?.idx ?? null;
 }
 
-function trueAUserBearing(bearingTrue: number, mode: EblMode): number {
-  if (mode === 'TRUE') return bearingTrue;
-  const heading = miBuque()?.headingDeg ?? 0;
-  return ((bearingTrue - heading) % 360 + 360) % 360;
-}
-
+// ----- Datos en vivo ----------------------------------------------------------
 function conectarSocket(): void {
   socket = io({ auth: { sesionId }, withCredentials: true });
   socket.on('connect', () => {
@@ -396,13 +412,18 @@ function conectarSocket(): void {
   });
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
+    // Blanco perdido: seguíamos un buque que ya no está en la sesión.
+    const presentes = new Set(payload.buques.map((b) => b.ownshipIndex));
+    for (const b of arpa.todos()) {
+      if (!presentes.has(b.ownshipIndex)) {
+        arpa.ceaseTrack(b.id);
+        blancoPerdido = true;
+      }
+    }
     arpa.procesarTick(payload.t, payload.buques);
     const mio = miBuque();
-    if (mio) {
-      arpaTargets = arpa.evaluar(mio, payload.buques);
-    }
-    actualizarStatus();
-    refrescarListaArpa();
+    if (mio) arpaTargets = arpa.evaluar(mio, payload.buques).sort((a, b) => a.ownshipIndex - b.ownshipIndex);
+    actualizarDatos();
   });
   socket.on('session:closed', () => {
     alert('El profesor cerró la sesión.');
@@ -410,40 +431,42 @@ function conectarSocket(): void {
   });
 }
 
-function actualizarStatus(): void {
+function actualizarDatos(): void {
   const mio = miBuque();
   if (!mio) return;
-  hdgVal.textContent = `${mio.headingDeg.toFixed(1)}°`;
-  spdVal.textContent = `${mio.velocidadKn.toFixed(1)} kn`;
-  posLatVal.textContent = formatDMS(mio.lat, true);
-  posLonVal.textContent = formatDMS(mio.lon, false);
+  el('hudHeading').textContent = mio.headingDeg.toFixed(1);
+  el('hudSpeed').textContent = mio.velocidadKn.toFixed(1);
+  el('hudCourse').textContent = mio.headingDeg.toFixed(1);
+  el('hudOwnSpeed').textContent = mio.velocidadKn.toFixed(1);
+  el('hudLat').textContent = formatDMS(mio.lat, true);
+  el('hudLon').textContent = formatDMS(mio.lon, false);
+  actualizarValoresMarcas();
 
-  // Actualizar el display del EBL si está activo.
-  if (config.eblActive) {
-    const bearingDisplay = document.getElementById('eblBearingDisplay') as HTMLSpanElement | null;
-    const bearingInput = document.getElementById('eblBearingInput') as HTMLInputElement | null;
-    const userBearing = trueAUserBearing(config.eblBearingTrue, eblMode);
-    if (bearingDisplay) {
-      const sufijo = eblMode === 'TRUE' ? 'T' : 'R';
-      bearingDisplay.textContent = `${userBearing.toFixed(1).padStart(5, '0')}° ${sufijo}`;
-    }
-    // No pisamos el input mientras el usuario está escribiendo.
-    if (bearingInput && document.activeElement !== bearingInput) {
-      bearingInput.value = userBearing.toFixed(1);
-    }
+  // Tabla de blancos: los dos primeros seguidos.
+  for (const col of [0, 1] as const) {
+    const t = arpaTargets[col];
+    const b = t ? ultimoTick?.buques.find((x) => x.ownshipIndex === t.ownshipIndex) : undefined;
+    const set = (id: string, v: string) => { el(`b${col}${id}`).textContent = v; };
+    el(`blanco${col}Id`).textContent = t ? String(t.ownshipIndex) : '—';
+    set('Lat', b ? formatDMS(b.lat, true) : '—');
+    set('Lon', b ? formatDMS(b.lon, false) : '—');
+    set('Brg', t ? `${t.bearingTrue.toFixed(1)}°` : '—');
+    set('Rng', t ? `${t.rangeNm.toFixed(2)} nm` : '—');
+    set('Crs', t && !Number.isNaN(t.courseDeg) ? `${t.courseDeg.toFixed(1)}°` : '—');
+    set('Spd', t ? `${t.speedKn.toFixed(2)} kn` : '—');
+    set('Cpa', t?.cpaNm != null ? `${t.cpaNm.toFixed(2)} nm` : '—');
+    set('Tcpa', t?.tcpaMin != null ? `${t.tcpaMin.toFixed(1)} min` : '—');
+    set('Aviso', t && esPeligroso(t, config) ? 'Collision Warning' : '');
   }
 
-  // Actualizar el display del VRM si está activo.
-  if (config.vrmActive) {
-    const rangeDisplay = document.getElementById('vrmRangeDisplay') as HTMLSpanElement | null;
-    const rangeInput = document.getElementById('vrmRangeInput') as HTMLInputElement | null;
-    if (rangeDisplay) {
-      rangeDisplay.textContent = `${config.vrmRangeNm.toFixed(2)} nm`;
-    }
-    if (rangeInput && document.activeElement !== rangeInput) {
-      rangeInput.value = config.vrmRangeNm.toFixed(2);
-    }
-  }
+  // Alarmas
+  const colision = config.arpaVisible && arpaTargets.some((t) => esPeligroso(t, config));
+  if (!colision) colisionReconocida = false;
+  const alarmaCol = el('alarmaColision');
+  alarmaCol.classList.toggle('encendida', colision);
+  alarmaCol.classList.toggle('titila', colision && !colisionReconocida);
+  el('alarmaNuevo').classList.toggle('encendida', Date.now() < nuevoBlancoHasta);
+  el('alarmaPerdido').classList.toggle('encendida', blancoPerdido);
 }
 
 function miBuque(): EstadoBuqueDTO | null {
@@ -456,18 +479,34 @@ function otrosBuques(): EstadoBuqueDTO[] {
   return ultimoTick.buques.filter((b) => b.ownshipIndex !== miOwnshipIndex);
 }
 
-// Loop de render a 60 FPS para mantener el barrido suave (cuando lo agreguemos en 4.3).
 function loop(): void {
-  if (ppi) {
-    ppi.draw(miBuque(), otrosBuques(), cartaCache, config, arpaTargets);
-  }
+  ppi?.draw(miBuque(), otrosBuques(), cartaCache, config, arpaTargets);
   requestAnimationFrame(loop);
+}
+
+// ----- Helpers ----------------------------------------------------------------
+function el<T extends HTMLElement = HTMLElement>(id: string): T {
+  const e = document.getElementById(id);
+  if (!e) throw new Error(`Falta #${id} en el HTML`);
+  return e as T;
 }
 
 function showError(msg: string): void {
   loadingMsg.textContent = msg;
   loadingMsg.classList.remove('placeholder');
   loadingMsg.classList.add('auth-error');
+}
+
+function norm360(d: number): number {
+  return ((d % 360) + 360) % 360;
+}
+
+function fmt3(d: number): string {
+  return d.toFixed(1).padStart(5, '0');
+}
+
+function formatEscala(nm: number): string {
+  return nm < 1 ? String(nm) : nm.toFixed(0);
 }
 
 function formatDMS(coord: number, esLat: boolean): string {
@@ -479,6 +518,6 @@ function formatDMS(coord: number, esLat: boolean): string {
 }
 
 window.addEventListener('resize', () => ppi?.resize());
-document.getElementById('logoutBtn')!.addEventListener('click', () => window.close());
+el('logoutBtn').addEventListener('click', () => window.close());
 
 void init();

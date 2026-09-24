@@ -11,158 +11,330 @@
     <h1 id="sesionTitulo">Aula</h1>
     <div class="topbar-right">
       <span id="connBadge" class="badge badge-preparada">conectando...</span>
-      <button id="btnAbrirRadar" type="button" class="link-button">📡 Abrir radar</button>
+      <div class="selector-vista" role="group" aria-label="Pantalla principal">
+        <span class="selector-vista-label">Pantalla grande:</span>
+        <button type="button" class="btn-vista" data-vista="radar" aria-pressed="true">Radar</button>
+        <button type="button" class="btn-vista" data-vista="consola" aria-pressed="false">Consola</button>
+        <button type="button" class="btn-vista" data-vista="carta" aria-pressed="false">Carta</button>
+      </div>
       <a href="/dashboard.html" class="link-button">← Salir</a>
       <span id="userBadge"></span>
       <button id="logoutBtn" type="button">Salir</button>
     </div>
   </header>
 
-  <main class="aula-main">
-    <!-- Carta y barco propio (la mitad izquierda de la pantalla) -->
-    <section class="aula-carta">
-      <div id="loadingMsg" class="placeholder">Cargando aula...</div>
-      <canvas id="cartaCanvas" hidden></canvas>
+  <!--
+    El alumno cursa desde casa con un solo monitor: las 3 vistas (Radar,
+    Consola, Carta) conviven en pantalla. Una ocupa el lugar "principal"
+    (grande, a la izquierda) y las otras dos se apilan a la derecha. La
+    asignación la hace aula.ts cambiando el grid-area de cada panel, sin
+    mover nodos del DOM — así el iframe del radar no se recarga ni pierde
+    su socket al cambiar de vista.
+  -->
+  <main class="aula-main" id="aulaMain" data-principal="radar">
+    <!-- Radar PPI: la misma página radar.html embebida en modo compacto -->
+    <section class="aula-panel" data-vista="radar">
+      <header class="aula-panel-header">
+        <h2>Radar</h2>
+        <button type="button" class="btn-sm btn-agrandar" data-vista="radar">⤢ Agrandar</button>
+      </header>
+      <div class="aula-panel-cuerpo">
+        <iframe id="radarFrame" class="radar-frame" title="Radar PPI"></iframe>
+      </div>
     </section>
 
-    <!-- Consola de mando (la mitad derecha, scrolleable) -->
-    <aside class="consola-melipal" data-ownship="—">
-      <div class="consola-titulo">
-        <h2>Consola de mando — <span id="ownshipBadge" class="badge">—</span></h2>
-      </div>
+    <!-- Carta náutica con el barco propio -->
+    <section class="aula-panel" data-vista="carta">
+      <header class="aula-panel-header">
+        <h2>Carta</h2>
+        <button type="button" class="btn-sm btn-agrandar" data-vista="carta">⤢ Agrandar</button>
+      </header>
+      <!--
+        Réplica del "Easy Navigator" del Melipal: barra de herramientas con los
+        íconos originales (public/img/carta), carta al centro, pestañas GPS /
+        Trace a la derecha y barra de estado abajo. La lógica está en
+        aula/navegador.ts.
+      -->
+      <div class="aula-panel-cuerpo navegador" id="navegador">
+        <div class="nav-barra" role="toolbar" aria-label="Herramientas de la carta">
+          <div class="nav-grupo">
+            <button type="button" class="nav-tb" data-icono="abrir" disabled title="La carta la elige el profesor"></button>
+            <span class="nav-sep"></span>
+            <button type="button" class="nav-tb" data-icono="zoom-mas" data-accion="zoom-mas" title="Acercar (Zoom in)"></button>
+            <button type="button" class="nav-tb" data-icono="zoom-menos" data-accion="zoom-menos" title="Alejar (Zoom out)"></button>
+            <span class="nav-sep"></span>
+            <button type="button" class="nav-tb" data-icono="puntero" data-herramienta="puntero" title="Puntero: arrastrá para mover la carta"></button>
+            <button type="button" class="nav-tb" data-icono="medir" data-herramienta="medir" title="Medir distancia y marcación: arrastrá entre dos puntos"></button>
+            <span class="nav-anillos">
+              <button type="button" class="nav-tb" data-icono="anillos" data-accion="anillos" title="Anillos de distancia alrededor del buque"></button>
+              <select id="navAnillos" aria-label="Separación de los anillos">
+                <option value="">off</option>
+                <option value="0.125">0,125nm</option>
+                <option value="0.25">0,25nm</option>
+                <option value="0.5">0,5nm</option>
+                <option value="1">1nm</option>
+                <option value="2">2nm</option>
+                <option value="4">4nm</option>
+                <option value="8">8nm</option>
+              </select>
+            </span>
+            <span class="nav-sep"></span>
+            <button type="button" class="nav-tb" data-icono="overlay" disabled title="Overlay de radar: no disponible en la versión web"></button>
+            <button type="button" class="nav-tb" data-icono="arpa" disabled title="ARPA sobre la carta: no disponible en la versión web"></button>
+          </div>
+          <div class="nav-grupo">
+            <button type="button" class="nav-tb" data-icono="relative" data-modo="relative" title="Relative Motion: el buque queda al centro"></button>
+            <button type="button" class="nav-tb" data-icono="true" data-modo="true" title="True Motion: la carta queda fija y se recentra al llegar al borde"></button>
+            <button type="button" class="nav-tb" data-icono="chart" data-modo="chart" title="Modo carta: mover la carta libremente"></button>
+          </div>
+        </div>
 
-      <!-- ============================================================ -->
-      <!-- Fila 1: Heading + SetCourse | Telégrafo | LOG / Cronómetro    -->
-      <!-- ============================================================ -->
-      <div class="consola-fila consola-fila-superior">
-
-        <!-- Panel HEADING + TURN RATE + SET COURSE + RUDDER COMMAND -->
-        <section class="panel panel-heading">
-          <h3 class="panel-titulo">HEADING</h3>
-          <div class="display-7seg" id="displayHeading">000.0</div>
-          <div class="panel-row">
-            <label>TURN RATE</label>
-            <span class="display-7seg-sm" id="displayTurnRate">0.0°/min</span>
+        <div class="nav-cuerpo">
+          <div class="nav-mapa aula-carta">
+            <div id="loadingMsg" class="placeholder">Cargando aula...</div>
+            <canvas id="cartaCanvas" hidden></canvas>
           </div>
 
-          <h3 class="panel-titulo">SET COURSE</h3>
-          <div class="set-course">
-            <input type="number" id="inputSetCourse" min="0" max="359" step="1" value="0" />
-            <span>°</span>
-            <button type="button" id="btnSetCourseEnter" class="btn-sm">ENTER</button>
-            <button type="button" id="btnAutopilot" class="btn-sm btn-toggle">AUTO</button>
-          </div>
-          <div class="panel-row">
-            <label>Set Course actual</label>
-            <span id="displaySetCourse">000°</span>
-          </div>
+          <aside class="nav-lateral">
+            <div class="nav-tabs" role="tablist">
+              <button type="button" class="nav-tab" role="tab" data-tab="gps" aria-selected="true">GPS</button>
+              <button type="button" class="nav-tab" role="tab" data-tab="trace" aria-selected="false">Trace</button>
+            </div>
 
-          <h3 class="panel-titulo">RUDDER COMMAND</h3>
-          <div class="rudder-cmd">
-            <button type="button" id="btnRudderPort" class="btn-port">◀ PORT</button>
-            <input type="number" id="inputRudder" min="0" max="35" step="1" value="0" />
-            <span>°</span>
-            <button type="button" id="btnRudderStbd" class="btn-stbd">STBD ▶</button>
-          </div>
-          <button type="button" id="btnRudderCenter" class="btn-sm">Centrar</button>
-        </section>
+            <div class="nav-pagina" data-tab="gps">
+              <fieldset>
+                <legend>[ Conection ]</legend>
+                <select disabled aria-label="Conexión"><option>LAN</option></select>
+                <div>Status: <span id="navEstadoGps">No Signal</span></div>
+                <div class="nav-botones">
+                  <img src="/img/carta/conectar-inactivo.png" alt="" id="navImgConectar" />
+                  <img src="/img/carta/desconectar-inactivo.png" alt="" id="navImgDesconectar" />
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>[ Position - GPS ]</legend>
+                <div class="nav-fila"><span>Latitude:</span><span class="nav-dato" id="navLat"></span></div>
+                <div class="nav-fila"><span>Longitude:</span><span class="nav-dato" id="navLon"></span></div>
+              </fieldset>
+              <fieldset class="nav-crece">
+                <legend>[ Speed ]</legend>
+                <div class="nav-fila"><span>Over Ground:</span><output class="nav-caja" id="navSog">0.00</output><span>(Knots)</span></div>
+                <div class="nav-fila">
+                  <label for="navVectorMin">Vector Time:</label>
+                  <input type="number" class="nav-caja" id="navVectorMin" min="1" max="60" value="10" />
+                  <span>(Minutes)</span>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>[ Heading ]</legend>
+                <div class="nav-grande" id="navHeading">000.0°</div>
+              </fieldset>
+              <fieldset>
+                <legend>[ Course ]</legend>
+                <div class="nav-grande" id="navCourse">000.0°</div>
+              </fieldset>
+            </div>
 
-        <!-- Telégrafo vertical mecánico -->
-        <section class="panel panel-telegrafo-host">
-          <h3 class="panel-titulo">TELÉGRAFO</h3>
-          <div id="telegrafoMount" class="telegrafo-mount"></div>
-          <div class="panel-row">
-            <label>Vel. ordenada</label>
-            <span class="display-7seg-sm" id="displayVelObj">0.0 kn</span>
-          </div>
-          <div class="panel-row">
-            <label>Vel. real (sobre agua)</label>
-            <span class="display-7seg-sm" id="displayVelReal">0.0 kn</span>
-          </div>
-        </section>
+            <div class="nav-pagina" data-tab="trace" hidden>
+              <div class="nav-trace-arriba">
+                <div>
+                  <label><input type="checkbox" id="navMostrarTraza" checked /> Show Trace</label>
+                  <label><input type="checkbox" id="navMuestrear" checked /> Sample</label>
+                </div>
+                <button type="button" class="nav-glyph" id="navBorrarTraza" title="Borrar el recorrido (no se puede deshacer)">
+                  <img src="/img/carta/borrar-traza.png" alt="Clear trace" />
+                </button>
+              </div>
+              <label class="nav-fila">Interval:
+                <select id="navIntervalo">
+                  <option value="5">5 s</option>
+                  <option value="10">10 s</option>
+                  <option value="30" selected>30 s</option>
+                  <option value="60">1 min</option>
+                  <option value="120">2 min</option>
+                  <option value="300">5 min</option>
+                </select>
+              </label>
+              <hr />
+              <button type="button" class="nav-glyph" id="navMarcar" title="Marcar la posición actual del buque">
+                <img src="/img/carta/marcar.png" alt="Mark" />
+              </button>
+              <ol class="nav-marcas" id="navMarcas"></ol>
+              <p class="nav-ayuda">Doble click sobre una marca en la carta para ver o editar su descripción.</p>
+            </div>
+          </aside>
+        </div>
 
-        <!-- LOG / DISTANCE / TIME -->
-        <section class="panel panel-log">
-          <h3 class="panel-titulo">LOG / DISTANCE / TIME</h3>
-          <div class="panel-row">
-            <label>DISTANCE</label>
-            <span class="display-7seg-sm" id="displayDistance">000.00 nm</span>
-          </div>
-          <div class="panel-row">
-            <label>TIME (sesión)</label>
-            <span class="display-7seg-sm" id="displayTime">00:00:00</span>
-          </div>
-          <div class="panel-row">
-            <label>UTC</label>
-            <span class="display-7seg-sm" id="displayUTC">--:--:--</span>
-          </div>
-        </section>
-      </div>
+        <div class="nav-estado">
+          <span id="navEstadoMouse">Range: — Bearing: —</span>
+          <span id="navEstadoModo">Relative Motion</span>
+          <span id="navEstadoPos">Lat: — Long: —</span>
+          <span id="navEstadoUtc">UTC Time: —</span>
+        </div>
 
-      <!-- ============================================================ -->
-      <!-- Fila 2: cinco diales analógicos                               -->
-      <!-- ============================================================ -->
-      <div class="consola-fila consola-fila-diales">
-        <div id="dialRudderCmd" class="dial-host"></div>
-        <div id="dialRudderAngle" class="dial-host"></div>
-        <div id="dialTurnRate" class="dial-host"></div>
-        <div id="dialWindSpeed" class="dial-host"></div>
-        <div id="dialWindDirection" class="dial-host"></div>
-      </div>
-
-      <!-- ============================================================ -->
-      <!-- Fila 3: GPS PosTech                                           -->
-      <!-- ============================================================ -->
-      <div class="consola-fila consola-fila-inferior">
-        <section class="panel panel-gps">
-          <h3 class="panel-titulo">GPS PosTech NT200D</h3>
-          <div class="panel-row">
-            <label>POSITION</label>
-            <span class="display-7seg-sm" id="displayLat">—</span>
-          </div>
-          <div class="panel-row">
-            <label></label>
-            <span class="display-7seg-sm" id="displayLon">—</span>
-          </div>
-          <div class="panel-row">
-            <label>UTC</label>
-            <span class="display-7seg-sm" id="displayGpsUtc">—</span>
-          </div>
-          <div class="panel-row">
-            <label>SPEED</label>
-            <span class="display-7seg-sm" id="displayGpsSpeed">— kt</span>
-          </div>
-          <div class="panel-row">
-            <label>TRIP</label>
-            <span class="display-7seg-sm" id="displayGpsTrip">— nm</span>
-          </div>
-          <div class="panel-row">
-            <label>COURSE</label>
-            <span class="display-7seg-sm" id="displayGpsCourse">—°</span>
-          </div>
-        </section>
-
-        <!-- VHF + Navtex + DMs del profesor (MVP 6) -->
-        <section class="panel panel-comm">
-          <h3 class="panel-titulo">VHF 3001</h3>
-          <div class="comm-row">
-            <label>CH</label>
-            <select id="vhfCanal"></select>
-          </div>
-          <div id="vhfMessages" class="comm-list"></div>
-          <form id="vhfForm" class="comm-input">
-            <input type="text" id="vhfInput" maxlength="500" placeholder="Mensaje de radio..." />
-            <button type="submit" class="btn-sm">TX</button>
+        <dialog class="nav-dialogo" id="navDialogo">
+          <form method="dialog">
+            <h3>Trace Point Description</h3>
+            <fieldset>
+              <legend>[ Position ]</legend>
+              Latitude: <span id="navDlgLat"></span> Longitude: <span id="navDlgLon"></span>
+            </fieldset>
+            <label>Name: <input type="text" id="navDlgNombre" maxlength="40" /></label>
+            <fieldset>
+              <legend>[ Description ]</legend>
+              <textarea id="navDlgDesc" rows="5" maxlength="500"></textarea>
+            </fieldset>
+            <div class="nav-dlg-botones">
+              <button type="button" id="navDlgBorrar">Delete</button>
+              <button value="aceptar">Accept</button>
+              <button value="cancelar" formnovalidate>Cancel</button>
+            </div>
           </form>
-
-          <h3 class="panel-titulo" style="margin-top: 12px;">NAVTEX</h3>
-          <div id="navtexMessages" class="comm-list comm-list-narrow"></div>
-
-          <h3 class="panel-titulo" style="margin-top: 12px;">MENSAJES INSTRUCTOR</h3>
-          <div id="dmMessages" class="comm-list comm-list-narrow"></div>
-        </section>
+        </dialog>
       </div>
-    </aside>
+    </section>
+
+    <!--
+      Consola de mando: réplica del módulo Comando del Melipal armada con sus
+      gráficos originales (public/img/consola). El "escenario" mide 1025x785 px
+      como la pantalla original y aula.ts lo escala al ancho del panel. Las
+      coordenadas de cada control están medidas sobre esos gráficos.
+    -->
+    <section class="aula-panel" data-vista="consola">
+      <header class="aula-panel-header">
+        <h2>Consola <span id="ownshipBadge" class="badge">—</span></h2>
+        <button type="button" class="btn-sm btn-agrandar" data-vista="consola">⤢ Agrandar</button>
+      </header>
+      <div class="aula-panel-cuerpo consola-melipal" id="consolaContenedor">
+        <div class="consola-escalador" id="consolaEscalador">
+          <div class="consola-escenario" id="consolaEscenario">
+
+            <div class="consola-fila">
+              <!-- Gobierno: HEADING / TURN RATE / SET COURSE / RUDDER COMMAND -->
+              <section class="panel-img" style="width:367px" aria-label="Gobierno">
+                <img class="panel-fondo" src="/img/consola/steering-bg.png" alt="" draggable="false" />
+                <div class="display-7seg pos" id="displayHeading" style="left:138px;top:31px;width:96px;height:34px">000.0</div>
+                <div class="turnrate-barra pos" style="left:89px;top:85px">
+                  <img id="turnRateBabor" src="/img/consola/turnrate-rojo.png" alt="" draggable="false" />
+                </div>
+                <div class="turnrate-barra pos" style="left:186px;top:85px">
+                  <img id="turnRateEstribor" src="/img/consola/turnrate-verde.png" alt="" draggable="false" />
+                </div>
+                <button type="button" class="btn-img pos" id="btnAuto" data-img="auto" style="left:69px;top:134px" title="Autopiloto (AUTO)">
+                  <img src="/img/consola/btn-auto-up.png" alt="AUTO" draggable="false" />
+                </button>
+                <input type="text" class="display-7seg display-input pos" id="inputSetCourse" style="left:149px;top:134px;width:74px;height:33px"
+                       inputmode="numeric" maxlength="3" aria-label="Set course (grados)" title="Rumbo del autopiloto: escribí y apretá ENTER" />
+                <button type="button" class="btn-img pos" id="btnEnter" data-img="enter" style="left:232px;top:134px" title="Confirmar set course">
+                  <img src="/img/consola/btn-enter-up.png" alt="ENTER" draggable="false" />
+                </button>
+                <button type="button" class="btn-img pos" id="btnManual" data-img="manual" style="left:69px;top:187px" title="Gobierno manual">
+                  <img src="/img/consola/btn-manual-up.png" alt="MANUAL" draggable="false" />
+                </button>
+                <div class="display-7seg pos" id="displayRudder" style="left:153px;top:191px;width:67px;height:25px">0</div>
+                <div class="joystick pos" id="joystick" style="left:149px;top:225px" title="Timón: click a la izquierda = babor, a la derecha = estribor, al centro = a la vía">
+                  <img id="joystickImg" src="/img/consola/joystick-c.png" alt="" draggable="false" />
+                  <button type="button" class="joystick-zona" data-paso="-5" aria-label="Timón 5° a babor"></button>
+                  <button type="button" class="joystick-zona joystick-centro" data-paso="0" aria-label="Timón a la vía"></button>
+                  <button type="button" class="joystick-zona" data-paso="5" aria-label="Timón 5° a estribor"></button>
+                </div>
+              </section>
+
+              <!-- Telégrafo doble: babor | escala | estribor -->
+              <section class="panel-img" style="width:290px" aria-label="Telégrafo">
+                <div id="telegrafoMount" class="telegrafo-mount"></div>
+              </section>
+
+              <!-- LOG / DISTANCE / TIME -->
+              <section class="panel-img" style="width:367px" aria-label="Corredera">
+                <img class="panel-fondo" src="/img/consola/log-bg.png" alt="" draggable="false" />
+                <button type="button" class="btn-img pos" id="btnLog1" data-img="log1" style="left:74px;top:57px" title="Corredera 1">
+                  <img src="/img/consola/btn-log1-down.png" alt="LOG 1" draggable="false" />
+                </button>
+                <button type="button" class="btn-img pos" id="btnLog2" data-img="log2" style="left:117px;top:57px" title="Corredera 2">
+                  <img src="/img/consola/btn-log2-up.png" alt="LOG 2" draggable="false" />
+                </button>
+                <div class="display-7seg pos" id="displayLog" style="left:161px;top:57px;width:98px;height:33px">0.0</div>
+                <button type="button" class="btn-img pos" id="btnDistReset" data-img="distreset" style="left:117px;top:125px" title="Poner a cero la distancia">
+                  <img src="/img/consola/btn-distreset-up.png" alt="DIST RESET" draggable="false" />
+                </button>
+                <div class="display-7seg pos" id="displayDistance" style="left:161px;top:128px;width:104px;height:26px">0.00</div>
+                <button type="button" class="btn-img pos" id="btnUtc" data-img="utc" style="left:73px;top:181px" title="Hora UTC">
+                  <img src="/img/consola/btn-utc-down.png" alt="UTC" draggable="false" />
+                </button>
+                <button type="button" class="btn-img pos" id="btnLocal" data-img="local" style="left:117px;top:181px" title="Hora local">
+                  <img src="/img/consola/btn-local-up.png" alt="LOCAL" draggable="false" />
+                </button>
+                <div class="display-7seg pos" id="displayTime" style="left:161px;top:184px;width:104px;height:26px">--:--:--</div>
+              </section>
+            </div>
+
+            <!-- Relojes analógicos -->
+            <div class="consola-fila">
+              <div id="dialRudderCmd" class="reloj-host"></div>
+              <div id="dialRudderAngle" class="reloj-host"></div>
+              <div id="dialTurnRate" class="reloj-host"></div>
+              <div id="dialWindSpeed" class="reloj-host"></div>
+              <div id="dialWindDirection" class="reloj-host"></div>
+            </div>
+
+            <div class="consola-fila">
+              <!-- GPS PosTech NT200D (sin gráfico original: pantalla LCD sobre chapa) -->
+              <section class="panel-img" style="width:367px" aria-label="GPS">
+                <img class="panel-fondo" src="/img/consola/fondo-367x290.png" alt="" draggable="false" />
+                <h3 class="panel-grabado pos" style="left:0;top:30px;width:367px">GPS PosTech NT200D</h3>
+                <div class="lcd pos" style="left:42px;top:60px;width:283px;height:190px">
+                  <div class="lcd-fila"><span>LAT</span><span id="displayLat">—</span></div>
+                  <div class="lcd-fila"><span>LON</span><span id="displayLon">—</span></div>
+                  <div class="lcd-fila"><span>SOG</span><span id="displayGpsSpeed">— kt</span></div>
+                  <div class="lcd-fila"><span>COG</span><span id="displayGpsCourse">—°</span></div>
+                  <div class="lcd-fila"><span>TRIP</span><span id="displayGpsTrip">— nm</span></div>
+                  <div class="lcd-fila"><span>UTC</span><span id="displayGpsUtc">—</span></div>
+                </div>
+              </section>
+
+              <!-- VHF 3001: la botonera la arma aula.ts sobre el gráfico -->
+              <section class="panel-img" style="width:275px" aria-label="VHF">
+                <img class="panel-fondo" src="/img/consola/fondo-275x290.png" alt="" draggable="false" />
+                <div class="vhf pos" id="vhf" style="left:25px;top:8px">
+                  <img class="vhf-cuerpo" src="/img/consola/vhf.png" alt="" draggable="false" />
+                  <div class="vhf-lcd" id="vhfLcd">
+                    <div class="vhf-lcd-canal"><small>CH</small><span id="vhfCanalDisplay">16</span></div>
+                    <div class="vhf-lcd-info" id="vhfLcdInfo"></div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Radio: mensajes VHF / NAVTEX / instructor -->
+              <section class="panel-img" style="width:367px" aria-label="Comunicaciones">
+                <img class="panel-fondo" src="/img/consola/fondo-367x290.png" alt="" draggable="false" />
+                <div class="comm pos" style="left:30px;top:28px;width:307px;height:234px">
+                  <div class="comm-tabs" role="tablist">
+                    <button type="button" class="comm-tab" role="tab" data-tab="vhf" aria-selected="true">VHF <span class="comm-nuevos" hidden></span></button>
+                    <button type="button" class="comm-tab" role="tab" data-tab="navtex" aria-selected="false">NAVTEX <span class="comm-nuevos" hidden></span></button>
+                    <button type="button" class="comm-tab" role="tab" data-tab="dm" aria-selected="false">INSTRUCTOR <span class="comm-nuevos" hidden></span></button>
+                  </div>
+                  <div class="comm-pagina" data-tab="vhf">
+                    <div id="vhfMessages" class="comm-list"></div>
+                    <form id="vhfForm" class="comm-input">
+                      <input type="text" id="vhfInput" maxlength="500" placeholder="Mensaje de radio..." />
+                      <button type="submit" class="btn-sm">TX</button>
+                    </form>
+                  </div>
+                  <div class="comm-pagina" data-tab="navtex" hidden>
+                    <div id="navtexMessages" class="comm-list"></div>
+                  </div>
+                  <div class="comm-pagina" data-tab="dm" hidden>
+                    <div id="dmMessages" class="comm-list"></div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script type="module" src="/aula.ts"></script>

@@ -1,5 +1,10 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
+
+// El proxy apunta al mismo PORT que usa el backend (.env), así se puede mover
+// el server si el 3000 está ocupado por otro proyecto local.
+const env = loadEnv('development', __dirname, '');
+const backendPort = env.PORT || '3000';
 
 export default defineConfig({
   root: 'src/client',
@@ -19,12 +24,32 @@ export default defineConfig({
       },
     },
   },
+  plugins: [
+    {
+      // En producción Express responde login.html en "/"; en dev lo imitamos
+      // para que http://localhost:5173 no dé 404.
+      name: 'raiz-a-login',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === '/') {
+            res.writeHead(302, { Location: '/login.html' });
+            res.end();
+            return;
+          }
+          next();
+        });
+      },
+    },
+  ],
   server: {
     port: 5173,
+    // Sin esto Vite escucha solo en ::1 y algunos navegadores de Windows
+    // resuelven localhost a 127.0.0.1 → "no se puede encontrar la página".
+    host: '127.0.0.1',
     proxy: {
-      '/api': 'http://localhost:3000',
+      '/api': `http://localhost:${backendPort}`,
       '/socket.io': {
-        target: 'ws://localhost:3000',
+        target: `ws://localhost:${backendPort}`,
         ws: true,
       },
     },

@@ -10,7 +10,9 @@ import { sesiones, participaciones, users } from '../db/schema.js';
 import { registry, roomDeSesion } from '../simulacion/registry.js';
 import {
   CANALES_VHF,
+  TELEGRAFO_IDS,
   type ShipControlPayload,
+  type TelegrafoId,
   type VHFTransmitPayload,
   type NavtexSendPayload,
   type DmSendPayload,
@@ -111,6 +113,7 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       // Y los mensajes recientes (VHF / Navtex / privados que le tocan)
       // para que el chat no aparezca vacío al refrescar.
       socket.emit('chat:snapshot', mundo.snapshotMensajes(ctx.userId));
+      socket.emit('traza:snapshot', mundo.snapshotTrazas(ctx.role === 'alumno' ? ctx.ownshipIndex : undefined));
     }
 
     // Eventos del cliente
@@ -118,8 +121,12 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       if (ctx.role !== 'alumno' || ctx.ownshipIndex === undefined) return;
       const mundo = registry.obtener(ctx.sesionId);
       if (!mundo) return;
-      if (typeof payload.telegrafo === 'string') {
-        mundo.setTelegrafo(ctx.ownshipIndex, payload.telegrafo);
+      // Validamos contra la lista: el payload viene del navegador.
+      if (TELEGRAFO_IDS.includes(payload.telegrafoBabor as TelegrafoId)) {
+        mundo.setTelegrafo(ctx.ownshipIndex, 'babor', payload.telegrafoBabor as TelegrafoId);
+      }
+      if (TELEGRAFO_IDS.includes(payload.telegrafoEstribor as TelegrafoId)) {
+        mundo.setTelegrafo(ctx.ownshipIndex, 'estribor', payload.telegrafoEstribor as TelegrafoId);
       }
       if (typeof payload.rudderCommandDeg === 'number' && Number.isFinite(payload.rudderCommandDeg)) {
         mundo.setRudderCommand(ctx.ownshipIndex, payload.rudderCommandDeg);
