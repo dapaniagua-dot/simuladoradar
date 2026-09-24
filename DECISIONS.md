@@ -197,6 +197,21 @@ En la carta, el alumno elige cada cuánto dibujar un punto (5 s a 5 min), puede 
 
 ---
 
+## D18. Consola del instructor con el aspecto del Melipal Instructor Module
+
+**Decidido (2026-09-24, pedido de Diego):** la vista del profesor (`sesion.html`) replica el Instructor Module del Melipal (`docs/referencia/melipal-instructor.png`): barra de herramientas con los íconos originales (`public/img/instructor/`, importados por `scripts/importar-instructor-melipal.py`), panel izquierdo con secciones desplegables (General, Exercise, Own Ships, VHF), carta al centro, matriz CPA-TCPA abajo y barra de estado.
+
+- **Simulación:** Play abre la sesión (si está preparada) o la reanuda; Pausa; Stop la termina.
+- **Carta:** todos los buques en rojo con etiqueta amarilla `OS-01`, vector (largo en minutos) y recorrido; click en un buque lo toma como **referencia** (el cursor mide marcación y distancia desde él, y los anillos se dibujan a su alrededor). Antes de abrir se ven las posiciones iniciales y se ubica cada buque como antes (click + arrastrar el rumbo).
+- **Own Ships:** datos en vivo de cada alumno (rumbo, velocidad, telégrafos, timón, autopiloto).
+- **Matriz CPA-TCPA:** marcación, distancia, CPA y TCPA entre cada par de buques, suponiendo rumbo y velocidad constantes.
+
+**Código compartido:** la carta del alumno (Easy Navigator) y la del instructor heredan de `src/client/carta/vista-carta.ts` (zoom, desplazamiento, coordenadas, medición, casco, vector, recorrido, anillos).
+
+**Etapas siguientes (pedidas por Diego):** viento y corriente, ver el radar/consola de un alumno, blancos del profesor (Directed Targets y Targets con waypoints).
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.
