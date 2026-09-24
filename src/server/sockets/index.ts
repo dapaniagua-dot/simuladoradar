@@ -24,6 +24,7 @@ import {
   type CrearBlancoPayload,
   type ModificarBlancoPayload,
   type WaypointDTO,
+  type FallasBuque,
   type PresenciaEvento,
   type VistaCliente,
 } from '../../shared/types.js';
@@ -153,26 +154,65 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
     if (ctx.role !== 'alumno') socket.emit('presencia:estado', presenciaDe(ctx.sesionId));
 
     // Eventos del cliente
+    // Comandos del buque. Los manda el alumno sobre el suyo, salvo que el
+    // instructor haya tomado el control ("Switch Ctrl"): ahí solo valen los
+    // del profesor, que indica a qué buque van.
     socket.on('ship:control', (payload: ShipControlPayload) => {
-      if (ctx.role !== 'alumno' || ctx.ownshipIndex === undefined) return;
       const mundo = registry.obtener(ctx.sesionId);
       if (!mundo) return;
+      let os: number;
+      if (ctx.role === 'alumno') {
+        if (ctx.ownshipIndex === undefined || mundo.controlInstructor(ctx.ownshipIndex)) return;
+        os = ctx.ownshipIndex;
+      } else {
+        if (typeof payload.ownshipIndex !== 'number' || !mundo.controlInstructor(payload.ownshipIndex)) return;
+        os = payload.ownshipIndex;
+      }
       // Validamos contra la lista: el payload viene del navegador.
       if (TELEGRAFO_IDS.includes(payload.telegrafoBabor as TelegrafoId)) {
-        mundo.setTelegrafo(ctx.ownshipIndex, 'babor', payload.telegrafoBabor as TelegrafoId);
+        mundo.setTelegrafo(os, 'babor', payload.telegrafoBabor as TelegrafoId);
       }
       if (TELEGRAFO_IDS.includes(payload.telegrafoEstribor as TelegrafoId)) {
-        mundo.setTelegrafo(ctx.ownshipIndex, 'estribor', payload.telegrafoEstribor as TelegrafoId);
+        mundo.setTelegrafo(os, 'estribor', payload.telegrafoEstribor as TelegrafoId);
       }
       if (typeof payload.rudderCommandDeg === 'number' && Number.isFinite(payload.rudderCommandDeg)) {
-        mundo.setRudderCommand(ctx.ownshipIndex, payload.rudderCommandDeg);
+        mundo.setRudderCommand(os, payload.rudderCommandDeg);
       }
       if (typeof payload.setCourseDeg === 'number' && Number.isFinite(payload.setCourseDeg)) {
-        mundo.setSetCourse(ctx.ownshipIndex, payload.setCourseDeg);
+        mundo.setSetCourse(os, payload.setCourseDeg);
       }
       if (typeof payload.autopilotOn === 'boolean') {
-        mundo.setAutopilot(ctx.ownshipIndex, payload.autopilotOn);
+        mundo.setAutopilot(os, payload.autopilotOn);
       }
+    });
+
+    // ===== Fallas inducidas, control y ARPA (solo instructor) =====
+    socket.on('fallas:set', (p: { ownshipIndex?: unknown; fallas?: Record<string, unknown> }) => {
+      if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number' || !p.fallas) return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo) return;
+      const f = p.fallas;
+      const cambios: Partial<FallasBuque> = {};
+      for (const k of ['gps', 'giro', 'log', 'autopiloto', 'maquina', 'radar'] as const) {
+        if (typeof f[k] === 'boolean') cambios[k] = f[k] as boolean;
+      }
+      if (typeof f.sectorCiegoDeg === 'number' && Number.isFinite(f.sectorCiegoDeg)) {
+        cambios.sectorCiegoDeg = Math.max(0, Math.min(180, f.sectorCiegoDeg));
+      }
+      if (f.ecoFalsoDeg === null) cambios.ecoFalsoDeg = null;
+      else if (typeof f.ecoFalsoDeg === 'number' && Number.isFinite(f.ecoFalsoDeg)) {
+        cambios.ecoFalsoDeg = ((f.ecoFalsoDeg % 360) + 360) % 360;
+      }
+      mundo.setFallas(p.ownshipIndex, cambios);
+    });
+    socket.on('control:set', (p: { ownshipIndex?: unknown; tomar?: unknown }) => {
+      if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number' || typeof p.tomar !== 'boolean') return;
+      registry.obtener(ctx.sesionId)?.setControlInstructor(p.ownshipIndex, p.tomar);
+    });
+    // "Lose ARPA Targets": el radar de ese alumno suelta todos sus blancos.
+    socket.on('radar:perder-arpa', (p: { ownshipIndex?: unknown }) => {
+      if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number') return;
+      io.to(room).emit('radar:perder-arpa', { ownshipIndex: p.ownshipIndex });
     });
 
     // ===== VHF: cualquiera transmite, todos los conectados a la sala

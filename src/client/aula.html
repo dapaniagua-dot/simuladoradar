@@ -10,6 +10,7 @@
   <header class="topbar">
     <h1 id="sesionTitulo">Aula</h1>
     <div class="topbar-right">
+      <span id="avisoControl" class="aviso-control" hidden>⚠ El instructor tomó el control de tu buque</span>
       <span id="connBadge" class="badge badge-preparada">conectando...</span>
       <div class="selector-vista" role="group" aria-label="Pantalla principal">
         <span class="selector-vista-label">Pantalla grande:</span>
@@ -214,6 +215,8 @@
               <section class="panel-img" style="width:367px" aria-label="Gobierno">
                 <img class="panel-fondo" src="/img/consola/steering-bg.png" alt="" draggable="false" />
                 <div class="display-7seg pos" id="displayHeading" style="left:138px;top:31px;width:96px;height:34px">000.0</div>
+                <!-- Lámpara ALARM: se enciende con cualquier falla del buque -->
+                <img class="pos lampara" id="lampAlarma" src="/img/consola/btn-alarm-up.png" alt="" style="left:262px;top:31px" />
                 <div class="turnrate-barra pos" style="left:89px;top:85px">
                   <img id="turnRateBabor" src="/img/consola/turnrate-rojo.png" alt="" draggable="false" />
                 </div>
@@ -255,6 +258,7 @@
                   <img src="/img/consola/btn-log2-up.png" alt="LOG 2" draggable="false" />
                 </button>
                 <div class="display-7seg pos" id="displayLog" style="left:161px;top:57px;width:98px;height:33px">0.0</div>
+                <img class="pos lampara" id="lampLogFail" src="/img/consola/btn-logfail-up.png" alt="" style="left:262px;top:57px" />
                 <button type="button" class="btn-img pos" id="btnDistReset" data-img="distreset" style="left:117px;top:125px" title="Poner a cero la distancia">
                   <img src="/img/consola/btn-distreset-up.png" alt="DIST RESET" draggable="false" />
                 </button>

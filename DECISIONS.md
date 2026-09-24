@@ -237,6 +237,27 @@ En la carta, el alumno elige cada cuánto dibujar un punto (5 s a 5 min), puede 
 
 ---
 
+## D21. Fallas inducidas y control del buque por el instructor
+
+**Decidido (2026-09-24):** como las pestañas Command y Radar de cada Own Ship en el Melipal, el profesor puede provocar fallas desde la fila del alumno (bloque "Fallas / Control"):
+
+- **GPS:** sin posición (NO FIX en la consola, "No Signal" y buque congelado en la carta, sin LAT/LONG en el radar).
+- **Gyro:** los repetidores quedan clavados en el último rumbo, el indicador de giro en 0 y el autopiloto se desconecta y no conecta.
+- **Log:** sin velocidad (LOG "----", lámpara LOG FAIL, SPEED "—" en el radar).
+- **Auto Pilot:** no conecta (y si estaba conectado, se desconecta).
+- **Engine:** sin propulsión (RPM 0 en las dos máquinas): el buque va frenando.
+- **Radar:** "RADAR FAILURE", sin imagen.
+- **Blind Sector:** sector ciego a popa con la amplitud elegida (no se ven ecos ahí).
+- **False Echo:** cada contacto aparece también en la marcación relativa elegida, a la misma distancia (solo se dibuja; no se puede adquirir).
+- **Lose ARPA Targets:** el radar del alumno suelta todos sus blancos (se enciende LOST TARGET).
+- **Switch Ctrl:** el instructor toma el control del buque. El server ignora los comandos del alumno (que ve el aviso y la consola bloqueada) y acepta los del instructor desde su Show Console.
+
+Con cualquier falla se enciende la lámpara **ALARM** de la consola y **SYSTEM ALARM** en el radar. Las fallas viven en el Mundo (en memoria), como los blancos.
+
+**Pendiente del original:** fallas de la ecosonda y "Preset instrumentation values" (radar que arranca desajustado).
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.

@@ -75,6 +75,8 @@ const displayGpsUtc = el<HTMLSpanElement>('displayGpsUtc');
 const displayGpsSpeed = el<HTMLSpanElement>('displayGpsSpeed');
 const displayGpsTrip = el<HTMLSpanElement>('displayGpsTrip');
 const displayGpsCourse = el<HTMLSpanElement>('displayGpsCourse');
+const lampAlarma = el<HTMLImageElement>('lampAlarma');
+const lampLogFail = el<HTMLImageElement>('lampLogFail');
 
 // VHF
 const vhf = el<HTMLDivElement>('vhf');
@@ -246,7 +248,7 @@ function cablearControles(): void {
   // Atajo de teclado: flechas izquierda/derecha = 5° a babor/estribor, salvo
   // que el alumno esté escribiendo en un campo.
   window.addEventListener('keydown', (e) => {
-    if (observando) return;
+    if (!puedeOperar()) return;
     const t = e.target as HTMLElement;
     if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -399,7 +401,8 @@ function conectarSocket(): void {
 }
 
 function enviarComando(payload: ShipControlPayload): void {
-  socket?.emit('ship:control', payload);
+  // El instructor con el control tomado manda los comandos a nombre del buque.
+  socket?.emit('ship:control', observando ? { ...payload, ownshipIndex: miOwnshipIndex } : payload);
 }
 
 // ----- Comunicaciones -----
@@ -573,14 +576,31 @@ function actualizarWidgets(): void {
   const mio = ultimoMioOnly();
   if (!mio) return;
 
+  // Fallas inducidas por el instructor: los instrumentos afectados dejan de
+  // dar datos (o quedan clavados) y se enciende la lámpara ALARM.
+  const f = mio.fallas;
+  const hayFalla = !!f && (f.gps || f.giro || f.log || f.autopiloto || f.maquina || f.radar
+    || f.sectorCiegoDeg > 0 || f.ecoFalsoDeg !== null);
+  pintarLampara(lampAlarma, 'alarm', hayFalla);
+  pintarLampara(lampLogFail, 'logfail', !!f?.log);
+  const rumboGiro = f?.giro ? mio.giroCongeladoDeg : mio.headingDeg;
+  const rot = f?.giro ? 0 : mio.turnRateDegPerMin;
+
+  // Control del buque: el alumno no opera mientras lo tiene el instructor; el
+  // instructor observando sí puede, solo en ese caso.
+  document.body.classList.toggle('bloqueado', !observando && mio.controlInstructor);
+  document.body.classList.toggle('controlando', observando && mio.controlInstructor);
+  el('avisoControl').hidden = !mio.controlInstructor;
+  el('avisoControl').textContent = observando ? '⚠ Tenés el control de este buque' : '⚠ El instructor tomó el control de tu buque';
+
   // HEADING + barra de TURN RATE (±30°/min, como la escala impresa)
-  displayHeading.textContent = mio.headingDeg.toFixed(1).padStart(5, '0');
-  const fraccion = Math.min(1, Math.abs(mio.turnRateDegPerMin) / 30);
+  displayHeading.textContent = rumboGiro.toFixed(1).padStart(5, '0');
+  const fraccion = Math.min(1, Math.abs(rot) / 30);
   const oculto = `${((1 - fraccion) * 100).toFixed(1)}%`;
   // Rojo = cayendo a babor (se enciende del centro hacia la izquierda),
   // verde = a estribor (del centro hacia la derecha).
-  turnRateBabor.style.clipPath = mio.turnRateDegPerMin < 0 ? `inset(0 0 0 ${oculto})` : 'inset(0 0 0 100%)';
-  turnRateEstribor.style.clipPath = mio.turnRateDegPerMin > 0 ? `inset(0 ${oculto} 0 0)` : 'inset(0 100% 0 0)';
+  turnRateBabor.style.clipPath = rot < 0 ? `inset(0 0 0 ${oculto})` : 'inset(0 0 0 100%)';
+  turnRateEstribor.style.clipPath = rot > 0 ? `inset(0 ${oculto} 0 0)` : 'inset(0 100% 0 0)';
 
   // SET COURSE + AUTO/MANUAL
   pintarBoton(btnAuto, mio.autopilotOn);
@@ -602,23 +622,24 @@ function actualizarWidgets(): void {
   telegrafo?.set('estribor', mio.telegrafoEstribor);
 
   // LOG (velocidad sobre el agua) / DISTANCE / TIME
-  displayLog.textContent = mio.velocidadKn.toFixed(1);
+  displayLog.textContent = f?.log ? '----' : mio.velocidadKn.toFixed(1);
   displayDistance.textContent = Math.max(0, (mio.distanceTotalNm ?? 0) - distanciaOffsetNm).toFixed(2);
   const utcTs = ultimoTick.ambiente?.utcTimestamp ?? Date.now();
   displayTime.textContent = horaLocal ? formatHora(utcTs) : formatUTC(utcTs);
 
   // GPS
-  displayLat.textContent = formatDMS(mio.lat, true);
-  displayLon.textContent = formatDMS(mio.lon, false);
+  const gps = !f?.gps;
+  displayLat.textContent = gps ? formatDMS(mio.lat, true) : 'NO FIX';
+  displayLon.textContent = gps ? formatDMS(mio.lon, false) : '—';
   displayGpsUtc.textContent = formatUTC(utcTs);
-  displayGpsSpeed.textContent = `${mio.velocidadKn.toFixed(1)} kt`;
-  displayGpsTrip.textContent = `${(mio.distanceTotalNm ?? 0).toFixed(2)} nm`;
-  displayGpsCourse.textContent = `${mio.headingDeg.toFixed(1)}°`;
+  displayGpsSpeed.textContent = gps ? `${mio.velocidadKn.toFixed(1)} kt` : '— kt';
+  displayGpsTrip.textContent = gps ? `${(mio.distanceTotalNm ?? 0).toFixed(2)} nm` : '— nm';
+  displayGpsCourse.textContent = gps ? `${mio.headingDeg.toFixed(1)}°` : '—°';
 
   // Relojes
   dialRudderCmd?.setValue(mio.rudderCommandDeg ?? 0);
   dialRudderAngle?.setValue(mio.rudderAngleDeg ?? 0);
-  dialTurnRate?.setValue(mio.turnRateDegPerMin ?? 0);
+  dialTurnRate?.setValue(rot ?? 0);
   dialWindSpeed?.setValue(ultimoTick.ambiente?.windSpeedKn ?? 0);
   dialWindDirection?.setValue(ultimoTick.ambiente?.windDirectionDeg ?? 0);
 }
@@ -767,16 +788,34 @@ function refrescarListaMarcas(): void {
 function actualizarNavegador(): void {
   const mio = ultimoMioOnly();
   if (!mio || !navegador || !ultimoTick) return;
-  navegador.actualizarBuque(mio);
-  el('navEstadoGps').textContent = 'Signal';
+  // Sin GPS el plotter se queda con la última posición conocida (no se
+  // actualiza el buque) y muestra "No Signal".
+  const gps = !mio.fallas?.gps;
+  if (gps) navegador.actualizarBuque(mio);
+  el('navEstadoGps').textContent = gps ? 'Signal' : 'No Signal';
   el<HTMLImageElement>('navImgConectar').src = '/img/carta/conectar-inactivo.png';
   el<HTMLImageElement>('navImgDesconectar').src = '/img/carta/desconectar.png';
-  el('navLat').textContent = formatDMS(mio.lat, true);
-  el('navLon').textContent = formatDMS(mio.lon, false);
-  el('navSog').textContent = Math.abs(mio.velocidadKn).toFixed(2);
-  el('navHeading').textContent = `${mio.headingDeg.toFixed(1).padStart(5, '0')}°`;
-  el('navCourse').textContent = `${mio.headingDeg.toFixed(1).padStart(5, '0')}°`;
+  el('navLat').textContent = gps ? formatDMS(mio.lat, true) : '—';
+  el('navLon').textContent = gps ? formatDMS(mio.lon, false) : '—';
+  el('navSog').textContent = gps ? Math.abs(mio.velocidadKn).toFixed(2) : '—';
+  const rumboGiro = mio.fallas?.giro ? mio.giroCongeladoDeg : mio.headingDeg;
+  el('navHeading').textContent = `${rumboGiro.toFixed(1).padStart(5, '0')}°`;
+  el('navCourse').textContent = gps ? `${mio.headingDeg.toFixed(1).padStart(5, '0')}°` : '---.-°';
   el('navEstadoUtc').textContent = `UTC Time: ${formatUTC(ultimoTick.ambiente?.utcTimestamp ?? Date.now())}`;
+}
+
+// El alumno opera su buque salvo que el instructor tenga el control; el
+// instructor observando solo opera si tomó el control.
+function puedeOperar(): boolean {
+  const mio = ultimoMioOnly();
+  return observando ? !!mio?.controlInstructor : !mio?.controlInstructor;
+}
+
+// Lámparas del panel (ALARM, LOG FAIL): el gráfico "down" es el encendido.
+function pintarLampara(img: HTMLImageElement, nombre: string, encendida: boolean): void {
+  const src = `/img/consola/btn-${nombre}-${encendida ? 'down' : 'up'}.png`;
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  img.classList.toggle('titila', encendida);
 }
 
 // ----- Helpers ---------------------------------------------------------------

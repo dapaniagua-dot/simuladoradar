@@ -165,6 +165,8 @@ export class PPI {
     carta: CartaParseada | null,
     config: PPIConfig,
     arpaTargets: DatosArpa[] = [],
+    // Fallas del radar que provoca el instructor.
+    fallas: { fueraDeServicio: boolean; sectorCiegoDeg: number } = { fueraDeServicio: false, sectorCiegoDeg: 0 },
   ): void {
     if (this.ancho <= 0 || this.alto <= 0) return;
     const pal = config.colorNoche ? PALETA.noche : PALETA.dia;
@@ -202,13 +204,13 @@ export class PPI {
 
     if (config.escalaMarcaciones) this.dibujarEscalaMarcaciones(ctx, radio, rot, pal.texto);
 
-    if (!config.transmitiendo) {
-      // Stand by: el transmisor no emite, no hay ecos ni barrido.
-      ctx.fillStyle = pal.texto;
+    if (!config.transmitiendo || fallas.fueraDeServicio) {
+      // Stand by (o radar en falla): el transmisor no emite, no hay ecos ni barrido.
+      ctx.fillStyle = fallas.fueraDeServicio ? pal.peligro : pal.texto;
       ctx.font = 'bold 18px Tahoma, Verdana, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('STAND BY', 0, 0);
+      ctx.fillText(fallas.fueraDeServicio ? 'RADAR FAILURE' : 'STAND BY', 0, 0);
       ctx.restore();
       return;
     }
@@ -243,6 +245,19 @@ export class PPI {
         pintarEcos(step.alpha);
         ctx.restore();
       }
+    }
+
+    // Sector ciego a popa: la antena no ve nada ahí (la superestructura la
+    // tapa), así que los ecos de ese sector no aparecen.
+    if (ownShip && fallas.sectorCiegoDeg > 0) {
+      const centro = ownShip.headingDeg + 180;
+      ctx.fillStyle = pal.ppi;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, radio, ((centro - fallas.sectorCiegoDeg / 2 - 90) * Math.PI) / 180,
+        ((centro + fallas.sectorCiegoDeg / 2 - 90) * Math.PI) / 180);
+      ctx.closePath();
+      ctx.fill();
     }
 
     if (config.anillos) this.dibujarAnillos(ctx, radio, config.escalaNm, pal.anillo);
