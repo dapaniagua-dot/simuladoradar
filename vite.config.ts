@@ -1,5 +1,10 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
+
+// El proxy apunta al mismo PORT que usa el backend (.env), así se puede mover
+// el server si el 3000 está ocupado por otro proyecto local.
+const env = loadEnv('development', __dirname, '');
+const backendPort = env.PORT || '3000';
 
 export default defineConfig({
   root: 'src/client',
@@ -22,9 +27,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3000',
+      '/api': `http://localhost:${backendPort}`,
       '/socket.io': {
-        target: 'ws://localhost:3000',
+        target: `ws://localhost:${backendPort}`,
         ws: true,
       },
     },
