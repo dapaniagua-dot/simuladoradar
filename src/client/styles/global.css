@@ -233,29 +233,99 @@ td a:hover { text-decoration: underline; }
 .sesion-card p { margin: 4px 0; }
 
 /* ============================================================
-   Aula del alumno: layout split carta + consola Melipal
+   Aula del alumno: una sola pantalla con Radar + Consola + Carta.
+   La vista principal ocupa la columna izquierda; las otras dos se
+   apilan a la derecha. aula.ts asigna el grid-area de cada panel.
    ============================================================ */
-.aula-body { overflow: hidden; height: 100vh; }
-.aula-main {
-  display: grid;
-  grid-template-columns: 1fr 720px;
-  gap: 0;
-  height: calc(100vh - 56px);
+.aula-body {
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
+.aula-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "principal sec1"
+    "principal sec2";
+  gap: 4px;
+  padding: 4px;
+}
+.aula-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.aula-panel.es-principal { border-color: var(--accent); }
+.aula-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 8px;
+  background: #0b1620;
+  border-bottom: 1px solid var(--border);
+}
+.aula-panel-header h2 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.aula-panel.es-principal .btn-agrandar { display: none; }
+.aula-panel-cuerpo {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.radar-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+}
+
+.selector-vista { display: flex; align-items: center; gap: 4px; }
+.selector-vista-label { font-size: 12px; }
+.btn-vista[aria-pressed="false"] {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
 .aula-carta {
   background: #06101a;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  position: relative;
 }
 .aula-carta canvas { display: block; }
+
+/* En pantallas angostas (tablet vertical) las vistas se apilan y se scrollea. */
+@media (max-width: 900px) {
+  .aula-body { overflow: auto; height: auto; }
+  .aula-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: 70vh 60vh 60vh;
+    grid-template-areas: "principal" "sec1" "sec2";
+  }
+}
 
 /* ---------- Consola de mando (estructura, sin pulir) ---------- */
 .consola-melipal {
   background: var(--bg-card);
-  border-left: 1px solid var(--border);
   padding: 12px;
   overflow-y: auto;
   display: flex;
@@ -459,6 +529,15 @@ td a:hover { text-decoration: underline; }
 }
 .radar-pantalla canvas { display: block; }
 .radar-loading { color: rgba(0, 220, 100, 0.6); }
+/* Radar embebido en el aula: sin barra superior, y con el panel de
+   controles más angosto cuando el panel del aula es chico (este media
+   query mide el iframe, no la ventana del navegador). */
+.radar-body.embebido .topbar { display: none; }
+.radar-body.embebido .radar-main { height: 100vh; }
+@media (max-width: 760px) {
+  .radar-body.embebido .radar-main { grid-template-columns: 1fr 200px; }
+  .radar-body.embebido .radar-controles { padding: 6px; gap: 6px; }
+}
 .radar-controles {
   background: var(--bg-card);
   border-left: 1px solid var(--border);

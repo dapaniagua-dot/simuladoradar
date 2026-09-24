@@ -70,6 +70,9 @@ async function init(): Promise<void> {
   }
 
   const params = new URLSearchParams(location.search);
+  // Embebido dentro del aula: el aula ya tiene su barra superior y el botón
+  // "Cerrar" (window.close) no aplica a un iframe, así que se ocultan.
+  if (params.get('embebido') === '1') document.body.classList.add('embebido');
   sesionId = Number(params.get('sesion'));
   if (!Number.isFinite(sesionId) || sesionId <= 0) {
     showError('Falta el ID de la sesión en la URL');

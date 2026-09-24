@@ -32,6 +32,8 @@ const ownshipBadge = el<HTMLSpanElement>('ownshipBadge');
 const connBadge = el<HTMLSpanElement>('connBadge');
 const loadingMsg = el<HTMLDivElement>('loadingMsg');
 const canvas = el<HTMLCanvasElement>('cartaCanvas');
+const aulaMain = el<HTMLElement>('aulaMain');
+const radarFrame = el<HTMLIFrameElement>('radarFrame');
 
 // Heading + turn rate + set course + rudder
 const displayHeading = el<HTMLDivElement>('displayHeading');
@@ -117,6 +119,10 @@ async function init(): Promise<void> {
   }
   const { sesion, carta } = (await res.json()) as AulaPayload;
   miOwnshipIndex = sesion.ownshipIndex;
+
+  // El radar corre en su propia página (con su propio socket), embebida en
+  // modo compacto. Solo la cargamos cuando sabemos que el alumno tiene acceso.
+  radarFrame.src = `/radar.html?sesion=${sesionId}&embebido=1`;
 
   titulo.textContent = sesion.nombre;
   ownshipBadge.textContent = `OS-${sesion.ownshipIndex}`;
@@ -559,18 +565,40 @@ function pad2(n: number): string {
   return n.toString().padStart(2, '0');
 }
 
-window.addEventListener('resize', () => {
-  redraw();
-  telegrafo?.refresh();
-});
+// ----- Layout de una sola pantalla -------------------------------------------
+// Una vista va en el lugar principal y las otras dos se apilan a la derecha,
+// siempre en este orden relativo para que no "salten" al cambiar.
+type Vista = 'radar' | 'consola' | 'carta';
+const VISTAS: readonly Vista[] = ['radar', 'consola', 'carta'];
+
+function seleccionarPrincipal(principal: Vista): void {
+  aulaMain.dataset.principal = principal;
+  const secundarias = VISTAS.filter((v) => v !== principal);
+  for (const panel of aulaMain.querySelectorAll<HTMLElement>('.aula-panel')) {
+    const vista = panel.dataset.vista as Vista;
+    panel.style.gridArea = vista === principal ? 'principal' : `sec${secundarias.indexOf(vista) + 1}`;
+    panel.classList.toggle('es-principal', vista === principal);
+  }
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.btn-vista')) {
+    btn.setAttribute('aria-pressed', String(btn.dataset.vista === principal));
+  }
+}
+
+for (const btn of document.querySelectorAll<HTMLButtonElement>('.btn-vista, .btn-agrandar')) {
+  btn.addEventListener('click', () => seleccionarPrincipal(btn.dataset.vista as Vista));
+}
+// Por pedido de Diego, al entrar al aula el radar siempre arranca grande.
+seleccionarPrincipal('radar');
+
+// Al cambiar de vista los paneles cambian de tamaño sin que cambie la ventana,
+// por eso observamos los contenedores en vez de escuchar window.resize. El
+// iframe del radar recibe su propio resize y se ajusta solo.
+new ResizeObserver(() => redraw()).observe(canvas.parentElement!);
+new ResizeObserver(() => telegrafo?.refresh()).observe(telegrafoMount);
+
 document.getElementById('logoutBtn')!.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   location.href = '/login.html';
-});
-document.getElementById('btnAbrirRadar')!.addEventListener('click', () => {
-  // Abrimos el PPI en otra ventana para que el alumno pueda llevarlo a otro
-  // monitor. Usa el mismo socket / sesión, conecta independiente.
-  window.open(`/radar.html?sesion=${sesionId}`, `radar-${sesionId}`, 'width=1100,height=720');
 });
 
 void init();
