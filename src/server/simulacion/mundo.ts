@@ -11,10 +11,16 @@ import type {
   MensajeVHF,
   MensajeNavtex,
   MensajePrivado,
+  PuntoTraza,
 } from '../../shared/types.js';
 export type { TickPayload };
 
 const HISTORIAL_MENSAJES_MAX = 100;
+
+// Recorrido (trace): un punto cada 5 s, hasta 4 horas por buque. La carta del
+// alumno submuestrea según el intervalo que elija.
+const TRAZA_INTERVALO_MS = 5000;
+const TRAZA_MAX_PUNTOS = (4 * 3600 * 1000) / TRAZA_INTERVALO_MS;
 
 const TICK_HZ = 10;
 const TICK_MS = 1000 / TICK_HZ;
@@ -63,9 +69,12 @@ export interface EstadoBuque {
   // Autopiloto
   autopilotOn: boolean;
   setCourseDeg: number;
+  // Recorrido realizado
+  traza: PuntoTraza[];
 }
 
 type EmitFn = (payload: TickPayload) => void;
+type TrazaFn = (ownshipIndex: number, punto: PuntoTraza) => void;
 
 export class Mundo {
   readonly sesionId: number;
@@ -79,6 +88,7 @@ export class Mundo {
   private mensajesVHF: MensajeVHF[] = [];
   private mensajesNavtex: MensajeNavtex[] = [];
   private mensajesPrivados: MensajePrivado[] = [];
+  private ultimaMuestraTraza = 0;
 
   // Por ahora el ambiente es fijo. En el futuro se configura desde la sesión.
   private ambiente: EstadoAmbienteDTO = {
@@ -87,7 +97,11 @@ export class Mundo {
     utcTimestamp: Date.now(),
   };
 
-  constructor(sesionId: number, private readonly emit: EmitFn) {
+  constructor(
+    sesionId: number,
+    private readonly emit: EmitFn,
+    private readonly onTraza: TrazaFn = () => {},
+  ) {
     this.sesionId = sesionId;
   }
 
@@ -122,6 +136,7 @@ export class Mundo {
       rudderAngleDeg: 0,
       autopilotOn: false,
       setCourseDeg: posInicial.headingDeg,
+      traza: [{ t: ahora, lat: posInicial.lat, lon: posInicial.lon }],
     });
   }
 
@@ -248,6 +263,33 @@ export class Mundo {
       }
     }
     this.emit(this.estadoActual());
+    if (!this.pausado && ahora - this.ultimaMuestraTraza >= TRAZA_INTERVALO_MS) {
+      this.ultimaMuestraTraza = ahora;
+      this.muestrearTraza(ahora);
+    }
+  }
+
+  private muestrearTraza(ahora: number): void {
+    for (const b of this.buques.values()) {
+      // Buque quieto: no agregamos puntos repetidos.
+      const ultimo = b.traza[b.traza.length - 1];
+      if (ultimo && ultimo.lat === b.lat && ultimo.lon === b.lon) continue;
+      const punto = { t: ahora, lat: b.lat, lon: b.lon };
+      b.traza.push(punto);
+      if (b.traza.length > TRAZA_MAX_PUNTOS) b.traza.shift();
+      this.onTraza(b.ownshipIndex, punto);
+    }
+  }
+
+  // Recorridos para un cliente que se conecta: el alumno solo recibe el suyo
+  // (como con un GPS real, no ve la derrota de los demás); el profesor, todos.
+  snapshotTrazas(soloOwnship?: number): Record<number, PuntoTraza[]> {
+    const out: Record<number, PuntoTraza[]> = {};
+    for (const b of this.buques.values()) {
+      if (soloOwnship !== undefined && b.ownshipIndex !== soloOwnship) continue;
+      out[b.ownshipIndex] = [...b.traza];
+    }
+    return out;
   }
 
   private actualizarBuque(b: EstadoBuque, dt: number): void {

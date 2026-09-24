@@ -313,6 +313,148 @@ td a:hover { text-decoration: underline; }
 }
 .aula-carta canvas { display: block; }
 
+/* ---------- Carta: réplica del Easy Navigator (look Windows clásico) ---------- */
+.navegador {
+  --win-gris: #d4d0c8;
+  --win-claro: #ffffff;
+  --win-oscuro: #808080;
+  display: flex;
+  flex-direction: column;
+  background: var(--win-gris);
+  color: #000;
+  font: 11px Tahoma, Verdana, "Segoe UI", sans-serif;
+}
+/* Controles de formulario con el aspecto de Windows, no el oscuro del sitio. */
+.navegador select, .navegador input[type="number"], .navegador input[type="text"], .nav-dialogo input, .nav-dialogo textarea {
+  font: inherit;
+  color: #000;
+  background: #fff;
+  border: 2px inset var(--win-gris, #d4d0c8);
+  border-radius: 0;
+  padding: 1px 3px;
+}
+.navegador select:disabled { color: #000; background: #fff; }
+.nav-barra {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--win-oscuro);
+  flex-wrap: wrap;
+}
+.nav-grupo { display: flex; align-items: center; gap: 3px; }
+.nav-sep { width: 2px; height: 30px; margin: 0 3px; border-left: 1px solid var(--win-oscuro); border-right: 1px solid var(--win-claro); }
+.nav-tb {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: center / 32px 32px no-repeat;
+  cursor: pointer;
+}
+.nav-tb:hover:not(:disabled) { border-color: var(--win-claro) var(--win-oscuro) var(--win-oscuro) var(--win-claro); }
+.nav-tb[aria-pressed="true"] { border-color: var(--win-oscuro) var(--win-claro) var(--win-claro) var(--win-oscuro); }
+.nav-tb:disabled { cursor: default; }
+.nav-anillos { display: flex; align-items: center; gap: 2px; }
+.nav-anillos select { font: inherit; height: 20px; }
+
+.nav-cuerpo { flex: 1; min-height: 0; display: flex; }
+.nav-mapa { flex: 1; min-width: 0; position: relative; background: #fff; }
+.nav-mapa canvas { position: absolute; inset: 0; cursor: crosshair; }
+
+.nav-lateral {
+  width: 176px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--win-oscuro);
+  overflow-y: auto;
+}
+.nav-tabs { display: flex; padding: 3px 3px 0; gap: 1px; }
+.nav-tab {
+  font: inherit;
+  padding: 2px 10px;
+  background: var(--win-gris);
+  border: 1px solid;
+  border-color: var(--win-claro) var(--win-oscuro) transparent var(--win-claro);
+  cursor: pointer;
+}
+.nav-tab[aria-selected="true"] { padding-bottom: 4px; margin-bottom: -1px; position: relative; font-weight: bold; }
+.nav-pagina {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 3px;
+  border-top: 1px solid var(--win-claro);
+}
+.nav-pagina[hidden] { display: none; }
+.nav-pagina fieldset {
+  margin: 0;
+  padding: 3px 6px 6px;
+  border: 1px solid;
+  border-color: var(--win-oscuro) var(--win-claro) var(--win-claro) var(--win-oscuro);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nav-pagina legend { padding: 0 2px; }
+.nav-crece { flex: 1; }
+.nav-fila { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.nav-dato { font-size: 14px; }
+.nav-caja {
+  width: 50px;
+  font: inherit;
+  padding: 1px 3px;
+  background: #fff;
+  border: 2px inset var(--win-gris);
+  text-align: right;
+}
+output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
+.nav-grande { font-size: 22px; text-align: center; }
+.nav-botones { display: flex; justify-content: center; gap: 10px; }
+.nav-trace-arriba { display: flex; justify-content: space-between; align-items: flex-start; }
+.nav-trace-arriba label { display: block; margin: 2px 0; }
+.nav-glyph {
+  padding: 2px;
+  background: var(--win-gris);
+  border: 2px outset var(--win-gris);
+  cursor: pointer;
+  line-height: 0;
+  align-self: center;
+}
+.nav-glyph:active { border-style: inset; }
+.nav-pagina hr { width: 100%; border: 0; border-top: 1px solid var(--win-oscuro); border-bottom: 1px solid var(--win-claro); }
+.nav-marcas { margin: 4px 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.nav-marcas button { font: inherit; width: 100%; text-align: left; background: #fff; border: 1px solid var(--win-oscuro); padding: 2px 4px; cursor: pointer; }
+.nav-ayuda { margin: 2px 0; color: #444; }
+
+.nav-estado { display: flex; gap: 2px; padding: 2px; border-top: 1px solid var(--win-claro); }
+.nav-estado span {
+  padding: 1px 6px;
+  border: 1px solid;
+  border-color: var(--win-oscuro) var(--win-claro) var(--win-claro) var(--win-oscuro);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nav-estado span:nth-child(3) { flex: 1; }
+
+.nav-dialogo {
+  font: 11px Tahoma, Verdana, sans-serif;
+  background: var(--win-gris, #d4d0c8);
+  border: 2px outset #d4d0c8;
+  padding: 8px;
+  width: 290px;
+}
+.nav-dialogo h3 { margin: 0 0 6px; font-size: 12px; }
+.nav-dialogo form { display: flex; flex-direction: column; gap: 6px; }
+.nav-dialogo fieldset { margin: 0; padding: 3px 6px 6px; border: 1px groove #fff; }
+.nav-dialogo input, .nav-dialogo textarea { font: inherit; width: 100%; box-sizing: border-box; }
+.nav-dlg-botones { display: flex; justify-content: flex-end; gap: 6px; }
+.nav-dlg-botones button { font: inherit; min-width: 70px; padding: 3px 8px; background: #d4d0c8; color: #000; border: 2px outset #d4d0c8; }
+.nav-dlg-botones button[hidden] { display: none; }
+
+
 /* En pantallas angostas (tablet vertical) las vistas se apilan y se scrollea. */
 @media (max-width: 900px) {
   .aula-body { overflow: auto; height: auto; }

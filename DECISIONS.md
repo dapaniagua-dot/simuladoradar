@@ -181,6 +181,22 @@ La consola es un "escenario" fijo de 1025×785 px (el tamaño de la pantalla ori
 
 ---
 
+## D17. Carta con el aspecto del Easy Navigator y recorrido (trace) del buque
+
+**Decidido (2026-09-24, pedido de Diego):** la vista Carta replica el visor de cartas del Melipal (Easy Navigator, manual sección 4.3): barra de herramientas con los **íconos originales** (extraídos de `Navigator.exe` por `scripts/importar-navigator-melipal.py` a `public/img/carta/`), pestañas GPS / Trace, barra de estado y el buque amarillo con vector de rumbo.
+
+**Recorrido (trace):** lo guarda el **server**, un punto cada 5 s por buque (hasta 4 h), y lo manda al conectarse (`traza:snapshot`) y a medida que avanza (`traza:punto`). Así no se pierde al recargar la página y queda disponible para el Replay y la vista del profesor. El alumno recibe solo su propio recorrido.
+
+En la carta, el alumno elige cada cuánto dibujar un punto (5 s a 5 min), puede ocultar la línea, pausar el muestreo ("Sample") o borrarla, y agregar **marcas** numeradas con nombre y descripción (botón Mark; doble click para verlas). Borrar, pausar y las marcas se guardan en el navegador del alumno (localStorage), no en el server: son anotaciones personales, como en el original.
+
+**Otras funciones:** zoom (botones y rueda), modos Relative Motion (buque al centro), True Motion (carta fija, se recentra en el borde) y Chart (mover la carta; arrastrar la carta pasa a este modo), herramienta de medir distancia y marcación, anillos de distancia alrededor del buque.
+
+**Cambio respecto a antes:** la carta ya **no muestra los otros buques**. El Easy Navigator es un plotter conectado al GPS propio: los demás buques se detectan con el radar, que es justamente lo que se entrena.
+
+**No disponible todavía:** abrir carta (la elige el profesor), overlay de radar y ARPA sobre la carta, ventana de preferencias.
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.

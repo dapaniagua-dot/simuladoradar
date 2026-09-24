@@ -155,6 +155,19 @@ export interface EstadoAmbienteDTO {
   utcTimestamp: number;     // timestamp UTC del server (ms)
 }
 
+// Punto del recorrido (trace) de un buque. El server toma uno cada pocos
+// segundos para que la carta pueda dibujar la derrota realizada.
+export interface PuntoTraza {
+  t: number;   // timestamp ms
+  lat: number;
+  lon: number;
+}
+
+export interface TrazaPuntoPayload {
+  ownshipIndex: number;
+  punto: PuntoTraza;
+}
+
 export interface TickPayload {
   t: number;
   buques: EstadoBuqueDTO[];

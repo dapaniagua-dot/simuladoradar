@@ -113,6 +113,7 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       // Y los mensajes recientes (VHF / Navtex / privados que le tocan)
       // para que el chat no aparezca vacío al refrescar.
       socket.emit('chat:snapshot', mundo.snapshotMensajes(ctx.userId));
+      socket.emit('traza:snapshot', mundo.snapshotTrazas(ctx.role === 'alumno' ? ctx.ownshipIndex : undefined));
     }
 
     // Eventos del cliente

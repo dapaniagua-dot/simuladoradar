@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { Reloj } from './aula/reloj.js';
 import { Telegrafo } from './aula/telegrafo.js';
+import { Navegador, type MarcaTraza, type ModoNavegador } from './aula/navegador.js';
 import { CANALES_VHF, type CanalVHF } from '../shared/types.js';
 import type {
   CartaParseada,
@@ -9,8 +10,10 @@ import type {
   MensajeNavtex,
   MensajePrivado,
   MensajeVHF,
+  PuntoTraza,
   ShipControlPayload,
   TickPayload,
+  TrazaPuntoPayload,
 } from '../shared/types.js';
 
 interface AulaPayload {
@@ -81,8 +84,7 @@ const vhfLcdInfo = el<HTMLDivElement>('vhfLcdInfo');
 // ----- Estado --------------------------------------------------------------
 let sesionId = 0;
 let miOwnshipIndex = 0;
-let cartaCache: CartaParseada | null = null;
-let imagenCache: HTMLImageElement | null = null;
+let navegador: Navegador | null = null;
 let ultimoTick: TickPayload | null = null;
 let socket: Socket | null = null;
 let telegrafo: Telegrafo | null = null;
@@ -146,7 +148,6 @@ async function init(): Promise<void> {
   titulo.textContent = sesion.nombre;
   ownshipBadge.textContent = `OS-${sesion.ownshipIndex}`;
   ownshipBadge.classList.add('badge-abierta');
-  cartaCache = carta;
 
   const img = new Image();
   img.src = carta.rasterUrl;
@@ -154,15 +155,17 @@ async function init(): Promise<void> {
     img.onload = () => resolve();
     img.onerror = () => reject(new Error('No se pudo cargar el PNG de la carta'));
   });
-  imagenCache = img;
   loadingMsg.hidden = true;
   canvas.hidden = false;
+  // Lo que el alumno configura en la carta (traza borrada, pausas, marcas)
+  // se guarda por sesión y por alumno en este navegador.
+  navegador = new Navegador(canvas, carta, img, `navegador-${sesionId}-${userId}`);
 
   inicializarWidgets();
   cablearControles();
   cablearComunicaciones();
+  cablearNavegador();
   conectarSocket();
-  redraw();
 }
 
 function inicializarWidgets(): void {
@@ -367,10 +370,16 @@ function conectarSocket(): void {
       console.error('actualizarWidgets falló:', err);
     }
     try {
-      redraw();
+      actualizarNavegador();
     } catch (err) {
-      console.error('redraw falló:', err);
+      console.error('actualizarNavegador falló:', err);
     }
+  });
+  socket.on('traza:snapshot', (porBuque: Record<number, PuntoTraza[]>) => {
+    navegador?.setTraza(porBuque[miOwnshipIndex] ?? []);
+  });
+  socket.on('traza:punto', (p: TrazaPuntoPayload) => {
+    if (p.ownshipIndex === miOwnshipIndex) navegador?.agregarPunto(p.punto);
   });
   socket.on('session:closed', () => {
     alert('El profesor cerró la sesión.');
@@ -603,87 +612,160 @@ function actualizarWidgets(): void {
   dialWindDirection?.setValue(ultimoTick.ambiente?.windDirectionDeg ?? 0);
 }
 
-// ----- Render del barco sobre la carta ---------------------------------------
-function redraw(): void {
-  if (!cartaCache || !imagenCache) return;
-  const img = imagenCache;
-  const dpr = window.devicePixelRatio || 1;
-  const containerWidth = canvas.parentElement!.clientWidth - 4;
-  const containerHeight = canvas.parentElement!.clientHeight - 4;
-  const escala = Math.min(
-    1,
-    containerWidth / img.naturalWidth,
-    containerHeight / img.naturalHeight,
-  );
-  const dispW = Math.floor(img.naturalWidth * escala);
-  const dispH = Math.floor(img.naturalHeight * escala);
-  canvas.style.width = `${dispW}px`;
-  canvas.style.height = `${dispH}px`;
-  canvas.width = Math.floor(dispW * dpr);
-  canvas.height = Math.floor(dispH * dpr);
+// ----- Carta (Easy Navigator) ----------------------------------------------
+const NOMBRES_MODO: Record<ModoNavegador, string> = {
+  relative: 'Relative Motion', true: 'True Motion', chart: 'Chart Mode',
+};
 
-  const ctx = canvas.getContext('2d')!;
-  ctx.setTransform(dpr * escala, 0, 0, dpr * escala, 0, 0);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.clearRect(0, 0, img.naturalWidth, img.naturalHeight);
-  ctx.drawImage(img, 0, 0);
-
-  if (ultimoTick) {
-    for (const b of ultimoTick.buques) {
-      dibujarBuque(ctx, escala, b, b.ownshipIndex === miOwnshipIndex);
+function cablearNavegador(): void {
+  const nav = navegador!;
+  // Íconos originales: activo / inactivo (deshabilitado) / marcado (elegido).
+  const pintarBarra = () => {
+    for (const b of document.querySelectorAll<HTMLButtonElement>('.nav-tb')) {
+      const elegido = b.dataset.modo === nav.modo || b.dataset.herramienta === nav.herramienta
+        || (b.dataset.accion === 'anillos' && nav.anillosNm !== null);
+      const estado = b.disabled ? 'inactivo' : elegido ? 'marcado' : 'activo';
+      b.style.backgroundImage = `url(/img/carta/tb-${b.dataset.icono}-${estado}.png)`;
+      b.setAttribute('aria-pressed', String(elegido));
     }
+    el('navEstadoModo').textContent = NOMBRES_MODO[nav.modo];
+  };
+  nav.onCambio = pintarBarra;
+
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.nav-tb')) {
+    b.addEventListener('click', () => {
+      if (b.dataset.modo) nav.setModo(b.dataset.modo as ModoNavegador);
+      else if (b.dataset.herramienta) {
+        nav.herramienta = b.dataset.herramienta as 'puntero' | 'medir';
+        if (nav.herramienta === 'puntero') nav.limpiarMedicion();
+      } else if (b.dataset.accion === 'zoom-mas') nav.zoom(1.5);
+      else if (b.dataset.accion === 'zoom-menos') nav.zoom(1 / 1.5);
+      else if (b.dataset.accion === 'anillos') {
+        const sel = el<HTMLSelectElement>('navAnillos');
+        sel.value = nav.anillosNm === null ? '1' : '';
+        sel.dispatchEvent(new Event('change'));
+      }
+      pintarBarra();
+    });
+  }
+  el<HTMLSelectElement>('navAnillos').addEventListener('change', (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    nav.anillosNm = v ? Number(v) : null;
+    nav.dibujar();
+    pintarBarra();
+  });
+  pintarBarra();
+
+  // Pestañas GPS / Trace
+  for (const tab of document.querySelectorAll<HTMLButtonElement>('.nav-tab')) {
+    tab.addEventListener('click', () => {
+      for (const t of document.querySelectorAll('.nav-tab')) t.setAttribute('aria-selected', String(t === tab));
+      for (const p of document.querySelectorAll<HTMLElement>('.nav-pagina')) p.hidden = p.dataset.tab !== tab.dataset.tab;
+    });
+  }
+
+  // GPS: largo del vector en minutos
+  const vector = el<HTMLInputElement>('navVectorMin');
+  vector.addEventListener('input', () => {
+    const v = Number(vector.value);
+    if (Number.isFinite(v) && v > 0) {
+      nav.vectorMin = Math.min(60, v);
+      nav.dibujar();
+    }
+  });
+
+  // Trace
+  const mostrar = el<HTMLInputElement>('navMostrarTraza');
+  const muestrear = el<HTMLInputElement>('navMuestrear');
+  muestrear.checked = nav.muestrear;
+  mostrar.addEventListener('change', () => { nav.mostrarTraza = mostrar.checked; nav.dibujar(); });
+  muestrear.addEventListener('change', () => nav.setMuestrear(muestrear.checked));
+  el<HTMLSelectElement>('navIntervalo').addEventListener('change', (e) => {
+    nav.intervaloSeg = Number((e.target as HTMLSelectElement).value);
+    nav.dibujar();
+  });
+  el('navBorrarTraza').addEventListener('click', () => {
+    if (confirm('¿Borrar el recorrido? No se puede deshacer.')) nav.borrarTraza();
+  });
+
+  // Marcas: el botón Mark abre el diálogo con la posición actual del buque.
+  el('navMarcar').addEventListener('click', () => {
+    const m = nav.nuevaMarca();
+    if (m) abrirDialogoMarca(m, true);
+  });
+  nav.onAbrirMarca = (m) => abrirDialogoMarca(m, false);
+  refrescarListaMarcas();
+
+  // Barra de estado: distancia / marcación y posición del mouse.
+  nav.onMouse = (info) => {
+    if (!info) return;
+    el('navEstadoMouse').textContent = info.rangoNm === null
+      ? 'Range: — Bearing: —'
+      : `Range: ${info.rangoNm.toFixed(3)}nm  Bearing: ${info.marcacion!.toFixed(2)}°`;
+    el('navEstadoPos').textContent = `Lat:${formatDMS(info.lat, true)}  Long:${formatDMS(info.lon, false)}`;
+  };
+}
+
+let marcaEnEdicion: { marca: MarcaTraza; nueva: boolean } | null = null;
+
+function abrirDialogoMarca(m: MarcaTraza, nueva: boolean): void {
+  marcaEnEdicion = { marca: m, nueva };
+  el('navDlgLat').textContent = formatDMS(m.lat, true);
+  el('navDlgLon').textContent = formatDMS(m.lon, false);
+  el<HTMLInputElement>('navDlgNombre').value = m.nombre;
+  el<HTMLTextAreaElement>('navDlgDesc').value = m.descripcion;
+  el('navDlgBorrar').hidden = nueva;
+  el<HTMLDialogElement>('navDialogo').showModal();
+}
+
+el<HTMLDialogElement>('navDialogo').addEventListener('close', () => {
+  const dlg = el<HTMLDialogElement>('navDialogo');
+  if (dlg.returnValue === 'aceptar' && marcaEnEdicion && navegador) {
+    navegador.guardarMarca({
+      ...marcaEnEdicion.marca,
+      nombre: el<HTMLInputElement>('navDlgNombre').value.trim(),
+      descripcion: el<HTMLTextAreaElement>('navDlgDesc').value.trim(),
+    });
+    refrescarListaMarcas();
+  }
+  marcaEnEdicion = null;
+  dlg.returnValue = '';
+});
+el('navDlgBorrar').addEventListener('click', () => {
+  if (marcaEnEdicion && navegador) {
+    navegador.borrarMarca(marcaEnEdicion.marca.n);
+    refrescarListaMarcas();
+  }
+  el<HTMLDialogElement>('navDialogo').close('cancelar');
+});
+
+function refrescarListaMarcas(): void {
+  const lista = el<HTMLOListElement>('navMarcas');
+  lista.innerHTML = '';
+  for (const m of navegador?.listarMarcas() ?? []) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = `${m.n}${m.nombre ? ` · ${m.nombre}` : ''}`;
+    b.addEventListener('click', () => abrirDialogoMarca(m, false));
+    li.appendChild(b);
+    lista.appendChild(li);
   }
 }
 
-function dibujarBuque(
-  ctx: CanvasRenderingContext2D,
-  escala: number,
-  b: EstadoBuqueDTO,
-  esPropio: boolean,
-): void {
-  if (!cartaCache) return;
-  const [px, py] = latLonToPx(b.lat, b.lon);
-  ctx.save();
-  ctx.translate(px, py);
-  ctx.rotate((b.headingDeg * Math.PI) / 180);
-  const r = 8 / escala;
-  ctx.fillStyle = esPropio ? 'rgba(0, 220, 140, 0.95)' : 'rgba(255, 220, 60, 0.9)';
-  ctx.strokeStyle = esPropio ? '#003322' : '#332200';
-  ctx.lineWidth = 1.5 / escala;
-  ctx.beginPath();
-  ctx.moveTo(0, -r * 1.6);
-  ctx.lineTo(r, r);
-  ctx.lineTo(-r, r);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  if (Math.abs(b.velocidadKn) > 0.1) {
-    const largo = Math.min(60, Math.abs(b.velocidadKn) * 2) / escala;
-    const sentido = b.velocidadKn >= 0 ? -1 : 1;
-    ctx.strokeStyle = esPropio ? 'rgba(0, 220, 140, 0.7)' : 'rgba(255, 220, 60, 0.6)';
-    ctx.lineWidth = 1.5 / escala;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, sentido * largo);
-    ctx.stroke();
-  }
-  ctx.restore();
-  ctx.fillStyle = esPropio ? 'rgba(0, 220, 140, 1)' : 'rgba(255, 220, 60, 0.9)';
-  ctx.font = `${12 / escala}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText(`OS-${b.ownshipIndex}`, px, py + 12 / escala);
-}
-
-function latLonToPx(lat: number, lon: number): [number, number] {
-  if (!cartaCache) return [0, 0];
-  const { esquinaNW, esquinaSE } = cartaCache;
-  const fx = (lon - esquinaNW.lon) / (esquinaSE.lon - esquinaNW.lon);
-  const fy = (esquinaNW.lat - lat) / (esquinaNW.lat - esquinaSE.lat);
-  const px = esquinaNW.px + fx * (esquinaSE.px - esquinaNW.px);
-  const py = esquinaNW.py + fy * (esquinaSE.py - esquinaNW.py);
-  return [px, py];
+function actualizarNavegador(): void {
+  const mio = ultimoMioOnly();
+  if (!mio || !navegador || !ultimoTick) return;
+  navegador.actualizarBuque(mio);
+  el('navEstadoGps').textContent = 'Signal';
+  el<HTMLImageElement>('navImgConectar').src = '/img/carta/conectar-inactivo.png';
+  el<HTMLImageElement>('navImgDesconectar').src = '/img/carta/desconectar.png';
+  el('navLat').textContent = formatDMS(mio.lat, true);
+  el('navLon').textContent = formatDMS(mio.lon, false);
+  el('navSog').textContent = Math.abs(mio.velocidadKn).toFixed(2);
+  el('navHeading').textContent = `${mio.headingDeg.toFixed(1).padStart(5, '0')}°`;
+  el('navCourse').textContent = `${mio.headingDeg.toFixed(1).padStart(5, '0')}°`;
+  el('navEstadoUtc').textContent = `UTC Time: ${formatUTC(ultimoTick.ambiente?.utcTimestamp ?? Date.now())}`;
 }
 
 // ----- Helpers ---------------------------------------------------------------
@@ -745,7 +827,6 @@ seleccionarPrincipal('radar');
 // Al cambiar de vista los paneles cambian de tamaño sin que cambie la ventana,
 // por eso observamos los contenedores en vez de escuchar window.resize. El
 // iframe del radar recibe su propio resize y se ajusta solo.
-new ResizeObserver(() => redraw()).observe(canvas.parentElement!);
 
 document.getElementById('logoutBtn')!.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });

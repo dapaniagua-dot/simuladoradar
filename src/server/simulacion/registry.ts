@@ -60,9 +60,15 @@ class Registry {
       .orderBy(participaciones.ownshipIndex);
 
     const io = this.io;
-    const mundo = new Mundo(sesionId, (payload) => {
-      io.to(roomDeSesion(sesionId)).emit('world:tick', payload);
-    });
+    const mundo = new Mundo(
+      sesionId,
+      (payload) => {
+        io.to(roomDeSesion(sesionId)).emit('world:tick', payload);
+      },
+      (ownshipIndex, punto) => {
+        io.to(roomDeSesion(sesionId)).emit('traza:punto', { ownshipIndex, punto });
+      },
+    );
 
     for (const p of parts) {
       const pos = resolverPosicion(p, centroLat, centroLon);
