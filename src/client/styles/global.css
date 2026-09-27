@@ -513,6 +513,25 @@ output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
   cursor: pointer;
 }
 .vhf-tecla:active { background: rgba(0, 0, 0, 0.3); }
+/* TRANSMIT del Melipal (BV-TXU / BV-TXD): se habla mientras está apretado. */
+.vhf-transmit {
+  width: 55px;
+  height: 21px;
+  padding: 0;
+  border: 0;
+  background: url(/img/consola/vhf-transmit-up.png) no-repeat;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.vhf-transmit.apretado { background-image: url(/img/consola/vhf-transmit-down.png); }
+.vhf-tx-estado { font-size: 11px; line-height: 17px; color: #cfd8dc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vhf-tx-estado.instr { color: #333; margin-left: 6px; flex: 1; min-width: 0; }
+.vhf-tx-estado.tx { color: #ff5252; font-weight: 600; }
+.vhf-tx-estado.rx { color: #69f0ae; font-weight: 600; }
+.vhf-tx-estado.instr.rx { color: #00796b; }
+.instr-canales { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 4px 0; }
+.instr-canales label { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
 
 /* Panel de comunicaciones sobre chapa */
 .comm { display: flex; flex-direction: column; gap: 4px; }

@@ -245,6 +245,32 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       io.to(room).emit('radar:perder-arpa', { ownshipIndex: p.ownshipIndex });
     });
 
+    const nombreEnRadio = () => (ctx.role === 'alumno' ? `OS-${ctx.ownshipIndex}: ${ctx.nombre}` : ctx.nombre);
+
+    // ===== VHF por voz (push-to-talk). El servidor solo reenvía; cada puesto
+    // decide si lo escucha según el canal sintonizado (el 16 lo oyen todos). =====
+    let canalVoz: CanalVHF | null = null;
+    const finVoz = () => {
+      if (canalVoz === null) return;
+      canalVoz = null;
+      socket.to(room).emit('vhf:voz-fin', { id: socket.id });
+    };
+    socket.on('vhf:voz-inicio', (p: { canal?: unknown }) => {
+      const canal = Number(p?.canal);
+      if (!CANALES_VHF.includes(canal as CanalVHF) || !registry.obtener(ctx.sesionId)) return;
+      if (ctx.vista === 'radar') return;
+      finVoz();
+      canalVoz = canal as CanalVHF;
+      socket.to(room).emit('vhf:voz-inicio', { id: socket.id, canal, nombre: nombreEnRadio() });
+    });
+    socket.on('vhf:voz', (pcm: unknown) => {
+      // ~8 kB/s: un paquete de audio nunca pasa de unos pocos cientos de bytes.
+      if (canalVoz === null || !Buffer.isBuffer(pcm) || pcm.length === 0 || pcm.length > 4096) return;
+      socket.to(room).emit('vhf:voz', { id: socket.id, pcm });
+    });
+    socket.on('vhf:voz-fin', finVoz);
+    socket.on('disconnect', finVoz);
+
     // ===== VHF: cualquiera transmite, todos los conectados a la sala
     // reciben (en el cliente se filtra por canal sintonizado). =====
     socket.on('vhf:transmit', (payload: VHFTransmitPayload) => {
@@ -254,9 +280,7 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       if (!CANALES_VHF.includes(canalNum as CanalVHF)) return;
       const mundo = registry.obtener(ctx.sesionId);
       if (!mundo) return;
-      const remitenteNombre = ctx.role === 'alumno'
-        ? `OS-${ctx.ownshipIndex}: ${ctx.nombre}`
-        : ctx.nombre;
+      const remitenteNombre = nombreEnRadio();
       const mensaje: MensajeVHF = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         canal: canalNum as CanalVHF,

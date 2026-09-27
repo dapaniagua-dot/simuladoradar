@@ -33,6 +33,8 @@ ARCHIVOS = {
     'r-wind spd.bmp': 'reloj-wind-speed.png',
     'r-wind dir.bmp': 'reloj-wind-direction.png',
     'vhf2 negro.bmp': 'vhf.png',
+    'BV-TXU.BMP': 'vhf-transmit-up.png',
+    'BV-TXD.BMP': 'vhf-transmit-down.png',
     'RED.BMP': 'turnrate-rojo.png',
     'Green.bmp': 'turnrate-verde.png',
 }
