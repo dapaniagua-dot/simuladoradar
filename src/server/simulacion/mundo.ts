@@ -2,7 +2,7 @@
 // Tick a 10 Hz: cada 100 ms se actualiza el estado de todos los OwnShips
 // y se emite por WebSocket a los clientes conectados.
 
-import { MODELO_DEFAULT, type ModeloBuque } from './buques.js';
+import { CATALOGO_BUQUES, MODELO_DEFAULT, type ModeloBuque } from './buques.js';
 import {
   actualizarBlanco, crearBlanco, limitarVel, norm360, setDerrota, toBlancoDTO, type Blanco, type VectorCorriente,
 } from './blancos.js';
@@ -39,7 +39,6 @@ const GRADOS_LAT_POR_MILLA = 1 / 60;
 
 // Tasa máxima a la que el rudder real persigue al comandado (grados/seg).
 // El timón físico no salta de 0 a 35° instantáneamente.
-const RUDDER_SLEW_DEG_PER_SEC = 4.0;
 
 // Ganancia del autopiloto: cuántos grados de timón pone por cada grado de error.
 const AUTOPILOT_GAIN_RUDDER_PER_DEG = 1.5;
@@ -169,8 +168,20 @@ export class Mundo {
   setTelegrafo(ownshipIndex: number, maquina: 'babor' | 'estribor', telegrafo: TelegrafoId): boolean {
     const b = this.buques.get(ownshipIndex);
     if (!b) return false;
-    if (maquina === 'babor') b.telegrafoBabor = telegrafo;
-    else b.telegrafoEstribor = telegrafo;
+    // Con una sola máquina las dos palancas se mueven juntas.
+    if (maquina === 'babor' || b.modelo.motores < 2) b.telegrafoBabor = telegrafo;
+    if (maquina === 'estribor' || b.modelo.motores < 2) b.telegrafoEstribor = telegrafo;
+    return true;
+  }
+
+  // El instructor cambia el tipo de buque de un Own Ship. Conserva posición y
+  // movimiento; la física nueva lo lleva a la velocidad que le corresponda.
+  setModelo(ownshipIndex: number, sigla: string): boolean {
+    const b = this.buques.get(ownshipIndex);
+    const modelo = CATALOGO_BUQUES[sigla];
+    if (!b || !modelo) return false;
+    b.modelo = modelo;
+    if (modelo.motores < 2) b.telegrafoEstribor = b.telegrafoBabor;
     return true;
   }
 
@@ -353,7 +364,7 @@ export class Mundo {
     return {
       version: 1,
       buques: [...this.buques.values()].map((b) => ({
-        ownshipIndex: b.ownshipIndex, lat: b.lat, lon: b.lon, headingDeg: b.headingDeg,
+        ownshipIndex: b.ownshipIndex, lat: b.lat, lon: b.lon, headingDeg: b.headingDeg, modeloSigla: b.modelo.sigla,
       })),
       blancos: [...this.blancos.values()].map((b) => (b.tipo === 'T'
         ? { tipo: 'T', lat: b.lat, lon: b.lon, rumbo: b.headingDeg, velKn: b.velPretendida, waypoints: b.waypoints.map((w) => ({ ...w })) }
@@ -378,6 +389,7 @@ export class Mundo {
     for (const pos of datos.buques) {
       const b = this.buques.get(pos.ownshipIndex);
       if (!b) continue;
+      if (pos.modeloSigla) this.setModelo(pos.ownshipIndex, pos.modeloSigla);
       Object.assign(b, {
         lat: pos.lat,
         lon: pos.lon,
@@ -493,7 +505,7 @@ export class Mundo {
 
     // 3) Rudder real persigue al comandado con velocidad de slew limitada.
     const errRudder = b.rudderCommandDeg - b.rudderAngleDeg;
-    const maxStep = RUDDER_SLEW_DEG_PER_SEC * dt;
+    const maxStep = b.modelo.velTimonDegPorSeg * dt;
     if (Math.abs(errRudder) <= maxStep) {
       b.rudderAngleDeg = b.rudderCommandDeg;
     } else {

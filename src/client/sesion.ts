@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { CartaInstructor } from './instructor/carta-instructor.js';
 import { VozVHF, conectarPTT } from './vhf/voz.js';
+import { FLOTA_MELIPAL } from '../shared/flota-melipal.js';
 import { CANALES_VHF, type CanalVHF } from '../shared/types.js';
 import type {
   ApiError,
@@ -440,6 +441,12 @@ async function loadParticipaciones(): Promise<void> {
       </div>
       <div class="instr-os-datos" data-vivo>${editable ? (tienePos ? 'Posición inicial fijada' : 'Posición automática') : '—'}</div>
       ${sesion?.estado === 'abierta' ? `
+      <div class="instr-fila">
+        <span>Ship:</span>
+        <select data-modelo title="Tipo de buque (flota del Melipal). * = comportamiento provisorio, falta calibrar con el Melipal">
+          ${FLOTA_MELIPAL.map((f) => `<option value="${f.sigla}">${f.sigla === 'M140' ? '' : '* '}${escape(f.nombre)} (${f.esloraM} m, ${f.velMaxKn} kn)</option>`).join('')}
+        </select>
+      </div>
       <div class="instr-os-vivo">
         <span class="instr-conexion" data-conexion>Aula <b data-aula>NO</b> · Radar <b data-radar>NO</b></span>
         <button type="button" data-ver-radar title="Ver en vivo el radar de este alumno">Show Radar</button>
@@ -493,6 +500,11 @@ async function loadParticipaciones(): Promise<void> {
     row.querySelector('[data-ver-radar]')?.addEventListener('click', () => verRadar(p));
     row.querySelector('[data-ver-consola]')?.addEventListener('click', () => verConsola(p));
     cablearFallas(row, p);
+    row.querySelector<HTMLSelectElement>('[data-modelo]')?.addEventListener('change', (e) => {
+      const sigla = (e.target as HTMLSelectElement).value;
+      socket?.emit('buque:modelo', { ownshipIndex: p.ownshipIndex, sigla });
+      registrarEvento(`OS-${p.ownshipIndex}: ${FLOTA_MELIPAL.find((f) => f.sigla === sigla)?.nombre ?? sigla}`);
+    });
     row.querySelector('[data-guardar]')?.addEventListener('click', async () => {
       const num = (sel: string) => Number(row.querySelector<HTMLInputElement>(sel)!.value);
       const [lat, lon, hdg] = [num('[data-lat]'), num('[data-lon]'), num('[data-hdg]')];
@@ -638,6 +650,8 @@ function refrescarDatosOS(): void {
     const datos = row.querySelector<HTMLElement>('[data-vivo]');
     if (!datos || !b) continue;
     sincronizarFallas(row, b);
+    const modelo = row.querySelector<HTMLSelectElement>('[data-modelo]');
+    if (modelo && document.activeElement !== modelo && modelo.value !== b.modeloSigla) modelo.value = b.modeloSigla;
     const timon = Math.round(b.rudderCommandDeg);
     datos.textContent = `HDG ${b.headingDeg.toFixed(1)}° · ${b.velocidadKn.toFixed(1)} kn · `
       + `Tel ${b.telegrafoBabor}/${b.telegrafoEstribor} · Timón ${timon === 0 ? '0' : `${Math.abs(timon)}${timon < 0 ? 'P' : 'S'}`}`

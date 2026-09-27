@@ -239,6 +239,12 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       io.to(room).emit('traza:reinicio');
     });
 
+    // Tipo de buque de un Own Ship (lista "Ship" del Melipal).
+    socket.on('buque:modelo', (p: { ownshipIndex?: unknown; sigla?: unknown }) => {
+      if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number' || typeof p.sigla !== 'string') return;
+      registry.obtener(ctx.sesionId)?.setModelo(p.ownshipIndex, p.sigla);
+    });
+
     // "Lose ARPA Targets": el radar de ese alumno suelta todos sus blancos.
     socket.on('radar:perder-arpa', (p: { ownshipIndex?: unknown }) => {
       if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number') return;

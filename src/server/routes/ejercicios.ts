@@ -24,6 +24,7 @@ export const datosEjercicioSchema = z.object({
     lat: coord,
     lon: coord,
     headingDeg: z.number().finite(),
+    modeloSigla: z.string().max(8).optional(),
   })).max(20),
   blancos: z.array(z.object({
     tipo: z.enum(['DT', 'T']),

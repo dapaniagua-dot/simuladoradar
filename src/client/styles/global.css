@@ -1083,3 +1083,4 @@ output.nav-caja { background: var(--win-gris); color: var(--win-oscuro); }
 .bloqueado .consola-escenario { pointer-events: none; filter: grayscale(0.4); }
 /* El instructor con el control sí puede operarla desde su Show Console. */
 .observando.controlando .consola-escenario { pointer-events: auto; }
+.instr-fila select[data-modelo] { flex: 1; min-width: 0; }

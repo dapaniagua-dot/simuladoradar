@@ -9,6 +9,7 @@
 
 import type { CartaParseada, EstadoBuqueDTO, PuntoTraza } from '../../shared/types.js';
 import { VistaCarta, type InfoMouse } from '../carta/vista-carta.js';
+import { FLOTA_MELIPAL } from '../../shared/flota-melipal.js';
 
 export type ModoNavegador = 'chart' | 'true' | 'relative';
 
@@ -26,7 +27,7 @@ export interface MarcaTraza {
 const COLOR_TRAZA = '#800080';
 const COLOR_VECTOR = '#800080';
 const COLOR_HERRAMIENTAS = '#800080';
-const ESLORA_M = 92;
+const eslora = (sigla: string) => FLOTA_MELIPAL.find((f) => f.sigla === sigla)?.esloraM ?? 92;
 
 export class Navegador extends VistaCarta {
   modo: ModoNavegador = 'relative';
@@ -221,7 +222,7 @@ export class Navegador extends VistaCarta {
     // Como el Easy Navigator: el barco se orienta con el heading y el vector
     // sigue el rumbo sobre el fondo que da el GPS.
     this.dibujarVectorRumbo(b.lat, b.lon, b.cogDeg ?? b.headingDeg, b.sogKn ?? b.velocidadKn, this.vectorMin, COLOR_VECTOR);
-    this.dibujarCasco(b.lat, b.lon, b.headingDeg, ESLORA_M, { relleno: '#ffff00', borde: '#000000', centro: '#ff0000' });
+    this.dibujarCasco(b.lat, b.lon, b.headingDeg, eslora(b.modeloSigla), { relleno: '#ffff00', borde: '#000000', centro: '#ff0000' });
   }
 
   private dibujarMarcas(): void {

@@ -115,6 +115,25 @@ export const TELEGRAFO_IDS: readonly TelegrafoId[] = [
   'FAS', 'HAS', 'SAS', 'DSAS', 'STOP', 'DSAH', 'SAH', 'HAH', 'MAN', 'FAH',
 ];
 
+// Un buque de la flota del Melipal (fleet.cfg), con los datos que se usan.
+// Lo genera scripts/importar-flota-melipal.py en shared/flota-melipal.ts.
+export interface BuqueFlota {
+  sigla: string;
+  nombre: string;
+  motores: number;
+  desplazamientoT: number;
+  esloraM: number;
+  mangaM: number;
+  caladoM: number;
+  velMaxKn: number;
+  velMinKn: number;
+  anguloTimonMaxDeg: number;
+  velTimonDegPorSeg: number;   // Angulo_Dot_Max
+  rpm: Record<TelegrafoId, number>;
+  bowThruster: boolean;
+  pesquero: boolean;
+}
+
 export interface PosicionTelegrafo {
   id: TelegrafoId;
   nombre: string;
@@ -391,7 +410,7 @@ export interface CartaParseada {
 // (por número de OS) y los blancos del instructor.
 export interface DatosEjercicio {
   version: 1;
-  buques: { ownshipIndex: number; lat: number; lon: number; headingDeg: number }[];
+  buques: { ownshipIndex: number; lat: number; lon: number; headingDeg: number; modeloSigla?: string }[];
   blancos: CrearBlancoPayload[];
   ambiente?: AmbientePayload;
 }

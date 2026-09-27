@@ -12,7 +12,11 @@
 import type { BlancoDTO, CartaParseada, EstadoBuqueDTO, Participacion, PuntoTraza, WaypointDTO } from '../../shared/types.js';
 import { VistaCarta, type InfoMouse } from '../carta/vista-carta.js';
 
+import { FLOTA_MELIPAL } from '../../shared/flota-melipal.js';
+
+// Los blancos no tienen tipo de buque: se dibujan con la eslora del M140.
 const ESLORA_M = 92;
+const eslora = (sigla: string) => FLOTA_MELIPAL.find((f) => f.sigla === sigla)?.esloraM ?? ESLORA_M;
 const COLOR_OS = { relleno: '#e00000', borde: '#600000', centro: '#ffff00' };
 const COLOR_DT = { relleno: '#0050e0', borde: '#001a60', centro: '#ffffff' };
 const COLOR_T = { relleno: '#008000', borde: '#003000', centro: '#ffffff' };
@@ -282,7 +286,7 @@ export class CartaInstructor extends VistaCarta {
             this.dibujarVectorRumbo(b.lat, b.lon, b.headingDeg, b.velocidadKn, this.vectorMin, COLOR_VECTOR_OS);
             this.ctx.setLineDash([]);
           }
-          this.dibujarCasco(b.lat, b.lon, b.headingDeg, ESLORA_M, COLOR_OS);
+          this.dibujarCasco(b.lat, b.lon, b.headingDeg, eslora(b.modeloSigla), COLOR_OS);
           this.dibujarEtiqueta(`OS-${b.ownshipIndex}`, b.lat, b.lon, '#ffff00');
         }
       }

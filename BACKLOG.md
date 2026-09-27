@@ -59,7 +59,9 @@ Se dejaron a la vista para que las pantallas sean iguales al Melipal:
 
 ## 🌊 Calibración física náutica (post-MVP 5)
 
-**Estado**: agendado el 2026-04-28.
+**Estado** (2026-09-27): **pasos 1 y 3 hechos** en `feature/flota` (D25). Los 21 buques del `fleet.cfg` ya se pueden elegir por Own Ship desde el Módulo Instructor, con física simple escalada desde el Meko 140. Lo que resta es la calibración: Diego mide en el Melipal de escritorio con el protocolo de `docs/calibracion-flota.md` y se cargan los valores medidos. El modelo hidrodinámico completo (paso 2) queda descartado por ahora: el `fleet.cfg` no trae las ecuaciones y varias derivadas están copiadas entre buques (D25).
+
+Plan original (agendado el 2026-04-28):
 **Origen**: durante MVP 3, Diego pidió "física exacta". Acordamos arrancar con física simple (Opción C) y volver después con un modelo realista (Opción A) que use los coeficientes del fleet.cfg.
 
 **Qué hay que hacer**:
