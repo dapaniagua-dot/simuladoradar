@@ -25,7 +25,9 @@ export interface Blanco {
   lat: number;
   lon: number;
   headingDeg: number;
-  velocidadKn: number;
+  velocidadKn: number;   // sobre el agua
+  sogKn: number;         // sobre el fondo
+  cogDeg: number;
   rumboPretendido: number;
   velPretendida: number;
   waypoints: WaypointDTO[];
@@ -46,6 +48,8 @@ export function crearBlanco(
     lon: datos.lon,
     headingDeg: norm360(datos.rumbo),
     velocidadKn: 0,
+    sogKn: 0,
+    cogDeg: norm360(datos.rumbo),
     rumboPretendido: norm360(datos.rumbo),
     velPretendida: limitarVel(datos.velKn),
     waypoints: [],
@@ -73,24 +77,36 @@ export function setDerrota(b: Blanco, waypoints: WaypointDTO[]): void {
   }
 }
 
-export function actualizarBlanco(b: Blanco, dt: number): void {
-  if (b.tipo === 'T') {
-    guiarPorDerrota(b, dt);
-  } else {
-    // DT: el rumbo se acerca al pretendido por el lado más corto.
-    const error = anguloError(b.rumboPretendido, b.headingDeg);
-    const paso = GIRO_MAX_DEG_S * dt;
-    b.headingDeg = Math.abs(error) <= paso ? b.rumboPretendido : norm360(b.headingDeg + Math.sign(error) * paso);
-  }
-  b.velocidadKn += ((b.velPretendida - b.velocidadKn) * dt) / TAU_VELOCIDAD_S;
-  avanzar(b, dt);
+// Corriente como vector en nudos (componentes Este y Norte).
+export interface VectorCorriente {
+  e: number;
+  n: number;
 }
 
-// Target: apunta al próximo waypoint; al llegar, pasa al tramo siguiente con
-// su velocidad. En el último, se detiene.
-function guiarPorDerrota(b: Blanco, dt: number): void {
+export function actualizarBlanco(b: Blanco, dt: number, corriente: VectorCorriente = { e: 0, n: 0 }): void {
+  b.velocidadKn += ((b.velPretendida - b.velocidadKn) * dt) / TAU_VELOCIDAD_S;
+  if (b.tipo === 'T') {
+    guiarPorDerrota(b, dt, corriente);
+    return;
+  }
+  // DT: el rumbo se acerca al pretendido por el lado más corto. La corriente
+  // lo arrastra: navega con su heading y velocidad sobre el agua, y sobre el
+  // fondo se le suma la corriente (manual del Melipal: "dos vectores").
+  const error = anguloError(b.rumboPretendido, b.headingDeg);
+  const paso = GIRO_MAX_DEG_S * dt;
+  b.headingDeg = Math.abs(error) <= paso ? b.rumboPretendido : norm360(b.headingDeg + Math.sign(error) * paso);
+  const r = (b.headingDeg * Math.PI) / 180;
+  moverSobreFondo(b, Math.sin(r) * b.velocidadKn + corriente.e, Math.cos(r) * b.velocidadKn + corriente.n, dt);
+}
+
+// Target: sigue su derrota sobre el fondo. Con corriente no se sale del tramo:
+// corrige el heading para compensar la deriva ("cangrejea") y su velocidad
+// sobre el fondo cambia según la corriente a favor o en contra. Al llegar a
+// un waypoint pasa al tramo siguiente; en el último, se detiene.
+function guiarPorDerrota(b: Blanco, dt: number, corriente: VectorCorriente): void {
   if (b.terminado) {
     b.velPretendida = 0;
+    b.sogKn = 0;
     return;
   }
   const destino = b.waypoints[b.tramo + 1];
@@ -98,9 +114,21 @@ function guiarPorDerrota(b: Blanco, dt: number): void {
     b.terminado = true;
     return;
   }
+  const track = marcacion(b.lat, b.lon, destino.lat, destino.lon);
+  const tr = (track * Math.PI) / 180;
+  // Corriente a lo largo del tramo y de través (positiva hacia estribor del tramo).
+  const cAlong = corriente.e * Math.sin(tr) + corriente.n * Math.cos(tr);
+  const cCross = corriente.e * Math.cos(tr) - corriente.n * Math.sin(tr);
+  const vw = Math.max(b.velocidadKn, 0.1);
+  const correccion = Math.asin(Math.max(-1, Math.min(1, -cCross / vw)));
+  b.headingDeg = norm360(track + (correccion * 180) / Math.PI);
+  b.rumboPretendido = track;
+  b.cogDeg = track;
+  b.sogKn = Math.max(0, vw * Math.cos(correccion) + cAlong);
+
   const distNm = distancia(b.lat, b.lon, destino.lat, destino.lon);
-  const pasoNm = (Math.max(b.velocidadKn, 0.1) / 3600) * dt;
-  if (distNm <= pasoNm * 1.5) {
+  const pasoNm = (b.sogKn / 3600) * dt;
+  if (distNm <= Math.max(pasoNm * 1.5, 1e-5)) {
     b.lat = destino.lat;
     b.lon = destino.lon;
     b.tramo++;
@@ -111,16 +139,20 @@ function guiarPorDerrota(b: Blanco, dt: number): void {
       return;
     }
     b.velPretendida = b.waypoints[b.tramo]!.velKn;
+    return;
   }
-  const w = b.waypoints[b.tramo + 1]!;
-  b.headingDeg = b.rumboPretendido = marcacion(b.lat, b.lon, w.lat, w.lon);
+  // Avanza exactamente sobre el tramo.
+  const millas = pasoNm;
+  b.lat += (Math.cos(tr) * millas) / 60;
+  b.lon += (Math.sin(tr) * millas) / (60 * Math.max(0.0001, Math.cos((b.lat * Math.PI) / 180)));
 }
 
-function avanzar(b: Blanco, dt: number): void {
-  const millas = (b.velocidadKn / 3600) * dt;
-  const r = (b.headingDeg * Math.PI) / 180;
-  b.lat += (Math.cos(r) * millas) / 60;
-  b.lon += (Math.sin(r) * millas) / (60 * Math.max(0.0001, Math.cos((b.lat * Math.PI) / 180)));
+// Mueve con una velocidad sobre el fondo dada en componentes (nudos).
+function moverSobreFondo(b: Blanco, vE: number, vN: number, dt: number): void {
+  b.sogKn = Math.hypot(vE, vN);
+  if (b.sogKn > 0.01) b.cogDeg = norm360((Math.atan2(vE, vN) * 180) / Math.PI);
+  b.lat += ((vN / 3600) * dt) / 60;
+  b.lon += ((vE / 3600) * dt) / (60 * Math.max(0.0001, Math.cos((b.lat * Math.PI) / 180)));
 }
 
 export function toBlancoDTO(b: Blanco): BlancoDTO {
@@ -132,6 +164,8 @@ export function toBlancoDTO(b: Blanco): BlancoDTO {
     lon: b.lon,
     headingDeg: b.headingDeg,
     velocidadKn: b.velocidadKn,
+    sogKn: b.sogKn,
+    cogDeg: b.cogDeg,
     rumboPretendido: b.rumboPretendido,
     velPretendida: b.velPretendida,
     waypoints: b.waypoints,

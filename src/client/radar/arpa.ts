@@ -118,8 +118,12 @@ export class ArpaTracker {
       }
 
       // CPA / TCPA. Velocidades en millas/segundo en componentes (E, N).
-      const ownVE = (Math.sin((ownShip.headingDeg * Math.PI) / 180) * ownShip.velocidadKn) / 3600;
-      const ownVN = (Math.cos((ownShip.headingDeg * Math.PI) / 180) * ownShip.velocidadKn) / 3600;
+      // El rumbo del blanco sale de sus posiciones sucesivas (sobre el fondo),
+      // así que el buque propio también va sobre el fondo (COG/SOG).
+      const ownRumbo = ((ownShip.cogDeg ?? ownShip.headingDeg) * Math.PI) / 180;
+      const ownVel = ownShip.sogKn ?? ownShip.velocidadKn;
+      const ownVE = (Math.sin(ownRumbo) * ownVel) / 3600;
+      const ownVN = (Math.cos(ownRumbo) * ownVel) / 3600;
       const tgtVE = !Number.isNaN(courseDeg) ? (Math.sin((courseDeg * Math.PI) / 180) * speedKn) / 3600 : 0;
       const tgtVN = !Number.isNaN(courseDeg) ? (Math.cos((courseDeg * Math.PI) / 180) * speedKn) / 3600 : 0;
       const vRelE = tgtVE - ownVE;

@@ -12,7 +12,7 @@ Orden acordado con Diego:
 
 1. **Blancos del profesor**: *Directed Targets* (buques que maneja el profesor: rumbo y velocidad) y *Targets* (siguen una derrota de waypoints con velocidad por tramo, manual sección de Targets). Tienen que aparecer como ecos en el radar (y ser adquiribles por ARPA) y en la carta y la matriz CPA-TCPA del instructor, pero **no** en la carta del alumno (solo GPS propio). Es lo que permite armar situaciones de cruce con cualquier cantidad de alumnos.
 2. **Ver el radar / la consola de un alumno** desde el instructor, en vivo y en solo lectura.
-3. **Viento y corriente**: el profesor los fija (sección Exercise del instructor, como en el Melipal) y afectan a los buques. Conviene hacerlo junto con la calibración física (más abajo).
+3. ~~**Viento y corriente**~~ ✅ hecho en `feature/viento-corriente` (D23). Falta que Diego pruebe la intensidad del clutter por viento; el efecto del viento sobre el casco queda para la calibración física.
 
 ---
 

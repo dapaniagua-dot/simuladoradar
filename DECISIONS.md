@@ -258,6 +258,32 @@ Con cualquier falla se enciende la lámpara **ALARM** de la consola y **SYSTEM A
 
 ---
 
+## D22. Ejercicios guardados (guardar / abrir)
+
+**Decidido (2026-09-24, con OK de Diego para la tabla nueva):** los botones Guardar y Abrir de la barra del instructor (como en el Melipal) guardan y cargan la **situación armada**: posición y rumbo de cada buque propio (por número de OS) y los blancos (DT y Targets con su derrota).
+
+- **Base de datos:** tabla nueva `ejercicios` (profesor, carta, nombre, descripción, `datos` en JSON). Se creó con `scripts/crear-tabla-ejercicios.ts` (`CREATE TABLE IF NOT EXISTS`) y **no** con `drizzle-kit push`, para no arriesgar cambios en las otras tablas de producción. Cada profesor ve solo sus ejercicios; un admin ve todos.
+- **Guardar:** toma la foto de la simulación en curso. Si el nombre ya existe, pregunta y lo reemplaza.
+- **Abrir:** lista los ejercicios de esa carta. Al cargar uno se reemplazan los blancos y cada buque vuelve a su posición guardada, detenido, con telégrafos en STOP, timón a la vía, sin fallas y con el recorrido en cero.
+- Ambos funcionan con la **sesión abierta** (conviene pausarla mientras se arma). Flujo típico: abrir la sesión, pausar, **Abrir** el ejercicio, y dar Play cuando los alumnos están listos.
+
+**Queda para después:** cargar un ejercicio en una sesión todavía "preparada" (antes de abrirla) y guardar también viento/corriente cuando existan.
+
+---
+
+## D23. Viento y corriente
+
+**Decidido (2026-09-27), siguiendo el manual del Melipal:**
+
+- **Viento (0 a 30 kn, dirección desde donde viene):** no mueve a los buques. Cambia el **retorno de mar (clutter)** del radar: más viento, más ecos de mar y más lejos del buque, y más fuertes del lado de barlovento. Los relojes WIND SPEED / WIND DIRECTION de la consola muestran el **viento aparente** (real menos el movimiento del buque), con la dirección relativa a la proa.
+- **Corriente / Drift (0 a 9 kn, dirección hacia donde va):** arrastra a los buques propios y a los DT. El LOG sigue marcando la velocidad sobre el agua; el GPS, la carta del alumno y OWN SHIP del radar muestran **SOG / COG** (sobre el fondo).
+- **Targets:** mantienen su derrota exacta y corrigen el heading ("cangrejean") para compensar la corriente.
+- **ARPA y matriz CPA-TCPA:** se calculan con los vectores sobre el fondo. En la carta del instructor, con corriente, el buque propio muestra el vector sobre el fondo (continuo) y sobre el agua (punteado).
+- Se fijan desde la sección **Exercise** del Módulo Instructor ([ Wind ] y [ Drift ] + Aplicar) y se guardan con el ejercicio.
+- La intensidad del clutter por viento es una **aproximación visual mía**, no sale del Melipal; se ajusta cuando Diego lo pruebe.
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.
@@ -267,4 +293,4 @@ Con cualquier falla se enciende la lámpara **ALARM** de la consola y **SYSTEM A
 
 ---
 
-*Última actualización: 2026-09-23.*
+*Última actualización: 2026-09-27.*

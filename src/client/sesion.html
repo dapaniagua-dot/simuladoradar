@@ -25,8 +25,8 @@
 
   <div class="instr-barra" role="toolbar" aria-label="Herramientas del instructor">
     <button type="button" class="instr-tb" data-icono="nuevo" disabled title="Nueva sesión: desde Mis sesiones"></button>
-    <button type="button" class="instr-tb" data-icono="abrir" disabled title="Abrir ejercicio: no disponible todavía"></button>
-    <button type="button" class="instr-tb" data-icono="guardar" disabled title="Guardar ejercicio: no disponible todavía"></button>
+    <button type="button" class="instr-tb" data-icono="abrir" id="btnAbrirEj" title="Abrir ejercicio guardado (con la sesión abierta)"></button>
+    <button type="button" class="instr-tb" data-icono="guardar" id="btnGuardarEj" title="Guardar la situación actual como ejercicio (con la sesión abierta)"></button>
     <span class="instr-sep"></span>
     <button type="button" class="instr-tb" data-icono="play" id="btnPlay" title="Abrir / reanudar la simulación"></button>
     <button type="button" class="instr-tb" data-icono="pausa" id="btnPausa" title="Pausar la simulación"></button>
@@ -87,6 +87,25 @@
             <legend>[ Map ]</legend>
             <div class="instr-fila"><span>File:</span><span id="exCarta">—</span></div>
             <div class="instr-fila"><span>Size (H):</span><span id="exAncho">—</span><span>Size (V):</span><span id="exAlto">—</span></div>
+          </fieldset>
+          <fieldset>
+            <legend>[ Wind ]</legend>
+            <div class="instr-fila"><span>Direction from:</span>
+              <input type="number" id="vientoDir" class="instr-num" min="0" max="359" step="5" value="0" /> °</div>
+            <div class="instr-fila"><span>Speed:</span>
+              <input type="number" id="vientoVel" class="instr-num" min="0" max="30" step="1" value="0" /> knt</div>
+            <p class="instr-desc">El viento cambia el retorno de mar (clutter) de los radares y lo marcan los anemómetros de las consolas.</p>
+          </fieldset>
+          <fieldset>
+            <legend>[ Drift ]</legend>
+            <div class="instr-fila"><span>Direction to:</span>
+              <input type="number" id="corrienteDir" class="instr-num" min="0" max="359" step="5" value="0" /> °</div>
+            <div class="instr-fila"><span>Speed:</span>
+              <input type="number" id="corrienteVel" class="instr-num" min="0" max="9" step="0.1" value="0" /> knt</div>
+            <p class="instr-desc">La corriente arrastra a los Own Ships y a los DT; los Targets corrigen el heading para no salirse de su derrota.</p>
+            <div class="instr-os-acciones"><button type="button" id="btnAmbiente">Aplicar</button></div>
+            <div class="instr-fila"><span>Vigente — viento:</span><span id="exViento">—</span></div>
+            <div class="instr-fila"><span>corriente:</span><span id="exCorriente">—</span></div>
           </fieldset>
           <fieldset>
             <legend>[ Session ]</legend>
@@ -218,6 +237,38 @@
     <span id="estLocal">Local Time: —</span>
     <span id="estEvento" class="instr-estado-crece">Last Event:</span>
   </footer>
+
+  <!-- Guardar ejercicio -->
+  <dialog id="dlgGuardar" class="instr-dialogo">
+    <form method="dialog">
+      <h3>Guardar ejercicio</h3>
+      <label>Nombre
+        <input type="text" id="ejNombre" list="ejNombres" maxlength="255" required />
+      </label>
+      <datalist id="ejNombres"></datalist>
+      <label>Descripción
+        <textarea id="ejDesc" rows="3" maxlength="2000"></textarea>
+      </label>
+      <p class="instr-desc">Se guarda la posición y el rumbo actuales de cada buque propio y los blancos (DT y Targets). Si usás un nombre que ya existe, se reemplaza.</p>
+      <div class="instr-dlg-botones">
+        <button value="guardar">Guardar</button>
+        <button value="cancelar" formnovalidate>Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Abrir ejercicio -->
+  <dialog id="dlgAbrir" class="instr-dialogo instr-dialogo-ancho">
+    <form method="dialog">
+      <h3>Abrir ejercicio</h3>
+      <p class="instr-desc">Ejercicios guardados para esta carta. Al cargar uno se reemplazan los blancos y cada buque vuelve a su posición guardada, detenido.</p>
+      <table class="instr-tabla-ej">
+        <thead><tr><th>Nombre</th><th>Guardado</th><th>OS</th><th>Blancos</th><th></th></tr></thead>
+        <tbody id="listaEjercicios"></tbody>
+      </table>
+      <div class="instr-dlg-botones"><button value="cerrar">Cerrar</button></div>
+    </form>
+  </dialog>
 
   <script type="module" src="/sesion.ts"></script>
 </body>

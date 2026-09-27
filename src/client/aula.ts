@@ -391,6 +391,8 @@ function conectarSocket(): void {
   socket.on('traza:snapshot', (porBuque: Record<number, PuntoTraza[]>) => {
     navegador?.setTraza(porBuque[miOwnshipIndex] ?? []);
   });
+  // Se cargó un ejercicio: los recorridos arrancan de cero.
+  socket.on('traza:reinicio', () => navegador?.setTraza([]));
   socket.on('traza:punto', (p: TrazaPuntoPayload) => {
     if (p.ownshipIndex === miOwnshipIndex) navegador?.agregarPunto(p.punto);
   });
@@ -632,16 +634,21 @@ function actualizarWidgets(): void {
   displayLat.textContent = gps ? formatDMS(mio.lat, true) : 'NO FIX';
   displayLon.textContent = gps ? formatDMS(mio.lon, false) : '—';
   displayGpsUtc.textContent = formatUTC(utcTs);
-  displayGpsSpeed.textContent = gps ? `${mio.velocidadKn.toFixed(1)} kt` : '— kt';
+  // El GPS da velocidad y rumbo sobre el fondo (con la corriente).
+  displayGpsSpeed.textContent = gps ? `${(mio.sogKn ?? mio.velocidadKn).toFixed(1)} kt` : '— kt';
   displayGpsTrip.textContent = gps ? `${(mio.distanceTotalNm ?? 0).toFixed(2)} nm` : '— nm';
-  displayGpsCourse.textContent = gps ? `${mio.headingDeg.toFixed(1)}°` : '—°';
+  displayGpsCourse.textContent = gps ? `${(mio.cogDeg ?? mio.headingDeg).toFixed(1)}°` : '—°';
 
   // Relojes
   dialRudderCmd?.setValue(mio.rudderCommandDeg ?? 0);
   dialRudderAngle?.setValue(mio.rudderAngleDeg ?? 0);
   dialTurnRate?.setValue(rot ?? 0);
-  dialWindSpeed?.setValue(ultimoTick.ambiente?.windSpeedKn ?? 0);
-  dialWindDirection?.setValue(ultimoTick.ambiente?.windDirectionDeg ?? 0);
+  // Anemómetro de a bordo: viento aparente (relativo al buque), dirección
+  // desde donde viene medida desde la proa (manual del Melipal, WIND SPEED /
+  // WIND DIRECTION).
+  const aparente = vientoAparente(mio, ultimoTick.ambiente);
+  dialWindSpeed?.setValue(aparente.kn);
+  dialWindDirection?.setValue(aparente.desdeRelDeg);
 }
 
 // ----- Carta (Easy Navigator) ----------------------------------------------
@@ -797,11 +804,29 @@ function actualizarNavegador(): void {
   el<HTMLImageElement>('navImgDesconectar').src = '/img/carta/desconectar.png';
   el('navLat').textContent = gps ? formatDMS(mio.lat, true) : '—';
   el('navLon').textContent = gps ? formatDMS(mio.lon, false) : '—';
-  el('navSog').textContent = gps ? Math.abs(mio.velocidadKn).toFixed(2) : '—';
+  el('navSog').textContent = gps ? (mio.sogKn ?? Math.abs(mio.velocidadKn)).toFixed(2) : '—';
   const rumboGiro = mio.fallas?.giro ? mio.giroCongeladoDeg : mio.headingDeg;
   el('navHeading').textContent = `${rumboGiro.toFixed(1).padStart(5, '0')}°`;
-  el('navCourse').textContent = gps ? `${mio.headingDeg.toFixed(1).padStart(5, '0')}°` : '---.-°';
+  el('navCourse').textContent = gps ? `${(mio.cogDeg ?? mio.headingDeg).toFixed(1).padStart(5, '0')}°` : '---.-°';
   el('navEstadoUtc').textContent = `UTC Time: ${formatUTC(ultimoTick.ambiente?.utcTimestamp ?? Date.now())}`;
+}
+
+// Viento aparente = viento real − movimiento del buque sobre el fondo.
+function vientoAparente(
+  b: EstadoBuqueDTO,
+  a: TickPayload['ambiente'] | undefined,
+): { kn: number; desdeRelDeg: number } {
+  if (!a) return { kn: 0, desdeRelDeg: 0 };
+  // Velocidad del aire (hacia donde va) y del buque, en componentes E/N.
+  const rv = ((a.windDirectionDeg + 180) * Math.PI) / 180;
+  const rb = (((b.cogDeg ?? b.headingDeg)) * Math.PI) / 180;
+  const sog = b.sogKn ?? b.velocidadKn;
+  const aE = Math.sin(rv) * a.windSpeedKn - Math.sin(rb) * sog;
+  const aN = Math.cos(rv) * a.windSpeedKn - Math.cos(rb) * sog;
+  const kn = Math.hypot(aE, aN);
+  if (kn < 0.05) return { kn: 0, desdeRelDeg: 0 };
+  const desde = (Math.atan2(-aE, -aN) * 180) / Math.PI;
+  return { kn, desdeRelDeg: (((desde - b.headingDeg) % 360) + 360) % 360 };
 }
 
 // El alumno opera su buque salvo que el instructor tenga el control; el

@@ -4,7 +4,7 @@
 
 import { MODELO_DEFAULT, type ModeloBuque } from './buques.js';
 import {
-  actualizarBlanco, crearBlanco, limitarVel, norm360, setDerrota, toBlancoDTO, type Blanco,
+  actualizarBlanco, crearBlanco, limitarVel, norm360, setDerrota, toBlancoDTO, type Blanco, type VectorCorriente,
 } from './blancos.js';
 import { SIN_FALLAS } from '../../shared/types.js';
 import type {
@@ -17,6 +17,8 @@ import type {
   MensajePrivado,
   PuntoTraza,
   FallasBuque,
+  DatosEjercicio,
+  AmbientePayload,
   CrearBlancoPayload,
   ModificarBlancoPayload,
 } from '../../shared/types.js';
@@ -75,6 +77,9 @@ export interface EstadoBuque {
   rudderAngleDeg: number;     // lo que físicamente está
   // Autopiloto
   autopilotOn: boolean;
+  // Movimiento sobre el fondo (velocidad del agua + corriente)
+  sogKn: number;
+  cogDeg: number;
   // Fallas inducidas y control del instructor
   fallas: FallasBuque;
   giroCongeladoDeg: number;
@@ -108,6 +113,8 @@ export class Mundo {
   private ambiente: EstadoAmbienteDTO = {
     windSpeedKn: 0,
     windDirectionDeg: 0,
+    corrienteKn: 0,
+    corrienteDeg: 0,
     utcTimestamp: Date.now(),
   };
 
@@ -150,6 +157,8 @@ export class Mundo {
       rudderAngleDeg: 0,
       autopilotOn: false,
       setCourseDeg: posInicial.headingDeg,
+      sogKn: 0,
+      cogDeg: posInicial.headingDeg,
       fallas: { ...SIN_FALLAS },
       giroCongeladoDeg: posInicial.headingDeg,
       controlInstructor: false,
@@ -195,6 +204,21 @@ export class Mundo {
       b.rudderCommandDeg = 0;
     }
     return true;
+  }
+
+  // ===== Viento y corriente (sección Exercise del instructor) =====
+  // Rangos del Melipal: viento 0-30 kn, corriente 0-9 kn.
+  setAmbiente(p: AmbientePayload): void {
+    const a = this.ambiente;
+    if (p.windSpeedKn !== undefined) a.windSpeedKn = Math.max(0, Math.min(30, p.windSpeedKn));
+    if (p.windDirectionDeg !== undefined) a.windDirectionDeg = norm360(p.windDirectionDeg);
+    if (p.corrienteKn !== undefined) a.corrienteKn = Math.max(0, Math.min(9, p.corrienteKn));
+    if (p.corrienteDeg !== undefined) a.corrienteDeg = norm360(p.corrienteDeg);
+  }
+
+  private vectorCorriente(): VectorCorriente {
+    const r = (this.ambiente.corrienteDeg * Math.PI) / 180;
+    return { e: Math.sin(r) * this.ambiente.corrienteKn, n: Math.cos(r) * this.ambiente.corrienteKn };
   }
 
   // ===== Fallas inducidas y control del instructor =====
@@ -323,6 +347,62 @@ export class Mundo {
     return this.blancos.delete(id);
   }
 
+  // ===== Ejercicios guardados =====
+  // Foto de la situación actual para guardarla como ejercicio.
+  exportarEjercicio(): DatosEjercicio {
+    return {
+      version: 1,
+      buques: [...this.buques.values()].map((b) => ({
+        ownshipIndex: b.ownshipIndex, lat: b.lat, lon: b.lon, headingDeg: b.headingDeg,
+      })),
+      blancos: [...this.blancos.values()].map((b) => (b.tipo === 'T'
+        ? { tipo: 'T', lat: b.lat, lon: b.lon, rumbo: b.headingDeg, velKn: b.velPretendida, waypoints: b.waypoints.map((w) => ({ ...w })) }
+        : { tipo: 'DT', lat: b.lat, lon: b.lon, rumbo: b.rumboPretendido, velKn: b.velPretendida })),
+      ambiente: {
+        windSpeedKn: this.ambiente.windSpeedKn,
+        windDirectionDeg: this.ambiente.windDirectionDeg,
+        corrienteKn: this.ambiente.corrienteKn,
+        corrienteDeg: this.ambiente.corrienteDeg,
+      },
+    };
+  }
+
+  // Carga un ejercicio: reemplaza los blancos y lleva cada buque propio a su
+  // posición guardada, detenido y con los comandos en cero (arranca de nuevo).
+  cargarEjercicio(datos: DatosEjercicio): void {
+    this.blancos.clear();
+    this.contadorBlancos = { DT: 0, T: 0 };
+    if (datos.ambiente) this.setAmbiente(datos.ambiente);
+    for (const b of datos.blancos) this.agregarBlanco(b);
+    const ahora = Date.now();
+    for (const pos of datos.buques) {
+      const b = this.buques.get(pos.ownshipIndex);
+      if (!b) continue;
+      Object.assign(b, {
+        lat: pos.lat,
+        lon: pos.lon,
+        headingDeg: pos.headingDeg,
+        prevHeadingDeg: pos.headingDeg,
+        velocidadKn: 0,
+        turnRateDegPerMin: 0,
+        telegrafoBabor: 'STOP',
+        telegrafoEstribor: 'STOP',
+        giroDiferencialDegPerSec: 0,
+        rudderCommandDeg: 0,
+        rudderAngleDeg: 0,
+        autopilotOn: false,
+        setCourseDeg: pos.headingDeg,
+        sogKn: 0,
+        cogDeg: pos.headingDeg,
+        distanceTotalNm: 0,
+        tripStartedAt: ahora,
+        fallas: { ...SIN_FALLAS },
+        giroCongeladoDeg: pos.headingDeg,
+        traza: [{ t: ahora, lat: pos.lat, lon: pos.lon }],
+      });
+    }
+  }
+
   estadoActual(): TickPayload {
     return {
       t: Date.now(),
@@ -346,7 +426,8 @@ export class Mundo {
     // En pausa no actualizamos la física pero seguimos emitiendo ticks para
     // que los clientes mantengan la conexión y reciban el estado congelado.
     if (!this.pausado) {
-      for (const bl of this.blancos.values()) actualizarBlanco(bl, dt);
+      const corriente = this.vectorCorriente();
+      for (const bl of this.blancos.values()) actualizarBlanco(bl, dt, corriente);
       for (const b of this.buques.values()) {
         this.actualizarBuque(b, dt);
       }
@@ -433,12 +514,20 @@ export class Mundo {
     b.turnRateDegPerMin = (dHead / dt) * 60;
     b.prevHeadingDeg = b.headingDeg;
 
-    // 6) Posición y distancia acumulada.
-    const millasEnDt = (b.velocidadKn / 3600) * dt;
+    // 6) Posición y distancia acumulada. El buque avanza sobre el agua con su
+    //    heading y velocidad (lo que mide la corredera) y la corriente lo
+    //    arrastra: sobre el fondo (lo que mide el GPS) se suman los dos.
     const headingRad = (b.headingDeg * Math.PI) / 180;
-    const dLat = millasEnDt * Math.cos(headingRad) * GRADOS_LAT_POR_MILLA;
+    const corriente = this.vectorCorriente();
+    const vE = Math.sin(headingRad) * b.velocidadKn + corriente.e;
+    const vN = Math.cos(headingRad) * b.velocidadKn + corriente.n;
+    b.sogKn = Math.hypot(vE, vN);
+    if (b.sogKn > 0.01) b.cogDeg = normalizeDeg((Math.atan2(vE, vN) * 180) / Math.PI);
+    const millasEnDt = (b.sogKn / 3600) * dt;
+    const rumboFondo = (b.cogDeg * Math.PI) / 180;
+    const dLat = millasEnDt * Math.cos(rumboFondo) * GRADOS_LAT_POR_MILLA;
     const factorLon = Math.cos((b.lat * Math.PI) / 180);
-    const dLon = (millasEnDt * Math.sin(headingRad) * GRADOS_LAT_POR_MILLA) / Math.max(0.0001, factorLon);
+    const dLon = (millasEnDt * Math.sin(rumboFondo) * GRADOS_LAT_POR_MILLA) / Math.max(0.0001, factorLon);
     b.lat += dLat;
     b.lon += dLon;
     b.distanceTotalNm += Math.abs(millasEnDt);
@@ -471,6 +560,8 @@ function toDTO(b: EstadoBuque): EstadoBuqueDTO {
     lon: b.lon,
     headingDeg: b.headingDeg,
     velocidadKn: b.velocidadKn,
+    sogKn: b.sogKn,
+    cogDeg: b.cogDeg,
     turnRateDegPerMin: b.turnRateDegPerMin,
     telegrafoBabor: b.telegrafoBabor,
     telegrafoEstribor: b.telegrafoEstribor,

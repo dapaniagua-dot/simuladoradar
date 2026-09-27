@@ -274,7 +274,14 @@ export class CartaInstructor extends VistaCarta {
       }
       if (this.mostrarBuques) {
         for (const b of this.buques) {
-          this.dibujarVectorRumbo(b.lat, b.lon, b.headingDeg, b.velocidadKn, this.vectorMin, COLOR_VECTOR_OS);
+          // Con corriente, dos vectores como en el Melipal: sobre el fondo
+          // (continuo) y sobre el agua (punteado).
+          this.dibujarVectorRumbo(b.lat, b.lon, b.cogDeg ?? b.headingDeg, b.sogKn ?? b.velocidadKn, this.vectorMin, COLOR_VECTOR_OS);
+          if (Math.abs((b.sogKn ?? 0) - b.velocidadKn) > 0.05 || Math.abs((b.cogDeg ?? b.headingDeg) - b.headingDeg) > 0.5) {
+            this.ctx.setLineDash([3, 3]);
+            this.dibujarVectorRumbo(b.lat, b.lon, b.headingDeg, b.velocidadKn, this.vectorMin, COLOR_VECTOR_OS);
+            this.ctx.setLineDash([]);
+          }
           this.dibujarCasco(b.lat, b.lon, b.headingDeg, ESLORA_M, COLOR_OS);
           this.dibujarEtiqueta(`OS-${b.ownshipIndex}`, b.lat, b.lon, '#ffff00');
         }
@@ -322,7 +329,7 @@ export class CartaInstructor extends VistaCarta {
       return;
     }
     // DT: vector actual y, si todavía está cambiando, el rumbo pretendido en punteado.
-    this.dibujarVectorRumbo(b.lat, b.lon, b.headingDeg, b.velocidadKn, this.vectorMin, COLOR_VECTOR_DT);
+    this.dibujarVectorRumbo(b.lat, b.lon, b.cogDeg ?? b.headingDeg, b.sogKn ?? b.velocidadKn, this.vectorMin, COLOR_VECTOR_DT);
     if (Math.abs(b.rumboPretendido - b.headingDeg) > 0.5 || Math.abs(b.velPretendida - b.velocidadKn) > 0.1) {
       ctx.setLineDash([3, 3]);
       this.dibujarVectorRumbo(b.lat, b.lon, b.rumboPretendido, Math.max(b.velPretendida, 1), this.vectorMin, COLOR_VECTOR_DT);

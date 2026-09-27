@@ -8,7 +8,9 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  jsonb,
 } from 'drizzle-orm/pg-core';
+import type { DatosEjercicio } from '../../shared/types.js';
 
 // Roles del sistema. Validados también por Zod en la capa de aplicación
 // (Postgres no usa enum nativo acá para simplificar las migraciones).
@@ -120,3 +122,31 @@ export const participaciones = pgTable(
 
 export type DbParticipacion = typeof participaciones.$inferSelect;
 export type NewDbParticipacion = typeof participaciones.$inferInsert;
+
+// Ejercicios guardados por el profesor ("guardar / abrir ejercicio" del
+// Melipal): la situación armada sobre una carta (posición de los buques
+// propios y blancos) para reutilizarla en otras clases.
+// La tabla se creó con scripts/crear-tabla-ejercicios.ts (no con drizzle-kit
+// push, para no tocar las demás tablas de la base de producción).
+export const ejercicios = pgTable(
+  'ejercicios',
+  {
+    id: serial('id').primaryKey(),
+    profesorId: integer('profesor_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    escenarioId: integer('escenario_id')
+      .notNull()
+      .references(() => escenarios.id, { onDelete: 'restrict' }),
+    nombre: varchar('nombre', { length: 255 }).notNull(),
+    descripcion: text('descripcion'),
+    datos: jsonb('datos').$type<DatosEjercicio>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    profesorEscenarioIdx: index('ejercicios_profesor_escenario_idx').on(table.profesorId, table.escenarioId),
+  }),
+);
+
+export type DbEjercicio = typeof ejercicios.$inferSelect;
