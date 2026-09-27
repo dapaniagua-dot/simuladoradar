@@ -271,6 +271,19 @@ Con cualquier falla se enciende la lámpara **ALARM** de la consola y **SYSTEM A
 
 ---
 
+## D23. Viento y corriente
+
+**Decidido (2026-09-27), siguiendo el manual del Melipal:**
+
+- **Viento (0 a 30 kn, dirección desde donde viene):** no mueve a los buques. Cambia el **retorno de mar (clutter)** del radar: más viento, más ecos de mar y más lejos del buque, y más fuertes del lado de barlovento. Los relojes WIND SPEED / WIND DIRECTION de la consola muestran el **viento aparente** (real menos el movimiento del buque), con la dirección relativa a la proa.
+- **Corriente / Drift (0 a 9 kn, dirección hacia donde va):** arrastra a los buques propios y a los DT. El LOG sigue marcando la velocidad sobre el agua; el GPS, la carta del alumno y OWN SHIP del radar muestran **SOG / COG** (sobre el fondo).
+- **Targets:** mantienen su derrota exacta y corrigen el heading ("cangrejean") para compensar la corriente.
+- **ARPA y matriz CPA-TCPA:** se calculan con los vectores sobre el fondo. En la carta del instructor, con corriente, el buque propio muestra el vector sobre el fondo (continuo) y sobre el agua (punteado).
+- Se fijan desde la sección **Exercise** del Módulo Instructor ([ Wind ] y [ Drift ] + Aplicar) y se guardan con el ejercicio.
+- La intensidad del clutter por viento es una **aproximación visual mía**, no sale del Melipal; se ajusta cuando Diego lo pruebe.
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.
@@ -280,4 +293,4 @@ Con cualquier falla se enciende la lámpara **ALARM** de la consola y **SYSTEM A
 
 ---
 
-*Última actualización: 2026-09-23.*
+*Última actualización: 2026-09-27.*

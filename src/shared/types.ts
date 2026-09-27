@@ -130,7 +130,9 @@ export interface EstadoBuqueDTO {
   lat: number;
   lon: number;
   headingDeg: number;       // rumbo actual del giroscompás (0-360)
-  velocidadKn: number;      // velocidad sobre el agua (knots)
+  velocidadKn: number;      // velocidad sobre el agua (knots) — la corredera
+  sogKn: number;            // velocidad sobre el fondo (con la corriente) — el GPS
+  cogDeg: number;           // rumbo sobre el fondo (0-360)
   turnRateDegPerMin: number;// tasa de giro instantánea (grados/minuto, signo = lado)
   // Comandos del operador: una palanca por máquina
   telegrafoBabor: TelegrafoId;
@@ -173,9 +175,18 @@ export const SIN_FALLAS: FallasBuque = {
 // En MVP 3.5 viene mockeado con valores fijos. En MVP futuro se conecta a un
 // modelo meteorológico que el profesor configura desde la sesión.
 export interface EstadoAmbienteDTO {
-  windSpeedKn: number;      // velocidad del viento (knots)
+  windSpeedKn: number;      // velocidad del viento (knots, 0-30)
   windDirectionDeg: number; // dirección DESDE donde sopla (0-360)
+  corrienteKn: number;      // velocidad de la corriente (knots, 0-9)
+  corrienteDeg: number;     // dirección HACIA donde va la corriente (0-360)
   utcTimestamp: number;     // timestamp UTC del server (ms)
+}
+
+export interface AmbientePayload {
+  windSpeedKn?: number;
+  windDirectionDeg?: number;
+  corrienteKn?: number;
+  corrienteDeg?: number;
 }
 
 // Punto del recorrido (trace) de un buque. El server toma uno cada pocos
@@ -228,7 +239,9 @@ export interface BlancoDTO {
   lat: number;
   lon: number;
   headingDeg: number;
-  velocidadKn: number;
+  velocidadKn: number;      // sobre el agua
+  sogKn: number;            // sobre el fondo
+  cogDeg: number;
   rumboPretendido: number;
   velPretendida: number;
   waypoints: WaypointDTO[]; // solo Targets
@@ -365,6 +378,7 @@ export interface DatosEjercicio {
   version: 1;
   buques: { ownshipIndex: number; lat: number; lon: number; headingDeg: number }[];
   blancos: CrearBlancoPayload[];
+  ambiente?: AmbientePayload;
 }
 
 export interface EjercicioResumen {

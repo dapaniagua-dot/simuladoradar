@@ -218,7 +218,9 @@ export class Navegador extends VistaCarta {
     const b = this.buque;
     if (!b) return;
     if (this.anillosNm) this.dibujarAnillos(b.lat, b.lon, this.anillosNm, COLOR_HERRAMIENTAS);
-    this.dibujarVectorRumbo(b.lat, b.lon, b.headingDeg, b.velocidadKn, this.vectorMin, COLOR_VECTOR);
+    // Como el Easy Navigator: el barco se orienta con el heading y el vector
+    // sigue el rumbo sobre el fondo que da el GPS.
+    this.dibujarVectorRumbo(b.lat, b.lon, b.cogDeg ?? b.headingDeg, b.sogKn ?? b.velocidadKn, this.vectorMin, COLOR_VECTOR);
     this.dibujarCasco(b.lat, b.lon, b.headingDeg, ESLORA_M, { relleno: '#ffff00', borde: '#000000', centro: '#ff0000' });
   }
 

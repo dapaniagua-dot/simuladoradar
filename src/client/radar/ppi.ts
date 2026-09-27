@@ -114,6 +114,7 @@ export class PPI {
   private antennaAngleDeg = 0;
   private lastFrameMs = 0;
   private clutter: { bearing: number; rangoNm: number; fuerza: number }[] = [];
+  private viento = { kn: 0, desdeDeg: 0 };
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -167,7 +168,9 @@ export class PPI {
     arpaTargets: DatosArpa[] = [],
     // Fallas del radar que provoca el instructor.
     fallas: { fueraDeServicio: boolean; sectorCiegoDeg: number } = { fueraDeServicio: false, sectorCiegoDeg: 0 },
+    viento: { kn: number; desdeDeg: number } = { kn: 0, desdeDeg: 0 },
   ): void {
+    this.viento = viento;
     if (this.ancho <= 0 || this.alto <= 0) return;
     const pal = config.colorNoche ? PALETA.noche : PALETA.dia;
 
@@ -303,13 +306,19 @@ export class PPI {
     // más fuertes, y cada vez menos lejos del buque.
     const supresion = config.autoClutter ? Math.max(config.mar, 70) : config.mar;
     const umbral = supresion / 100;
+    // El viento levanta mar (manual del Melipal): más viento, más retorno y
+    // más lejos del buque, y más fuerte del lado de donde viene (barlovento).
+    const intensidad = 0.25 + this.viento.kn / 20;
+    const alcance = 0.6 + this.viento.kn / 25;
     ctx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha})`;
     const lado = Math.max(1.5, Math.min(3, pixelsPorMilla * 0.02));
     for (const p of this.clutter) {
-      if (p.fuerza * Math.exp(-p.rangoNm / 1.5) < umbral) continue;
-      if (p.rangoNm > config.escalaNm) continue;
+      const rango = p.rangoNm * alcance;
+      const barlovento = this.viento.kn > 0 ? 0.7 + 0.3 * Math.cos(((p.bearing - this.viento.desdeDeg) * Math.PI) / 180) : 1;
+      if (p.fuerza * intensidad * barlovento * Math.exp(-rango / 1.5) < umbral) continue;
+      if (rango > config.escalaNm) continue;
       const a = ((p.bearing - 90) * Math.PI) / 180;
-      const r = p.rangoNm * pixelsPorMilla;
+      const r = rango * pixelsPorMilla;
       ctx.fillRect(Math.cos(a) * r, Math.sin(a) * r, lado, lado);
     }
   }

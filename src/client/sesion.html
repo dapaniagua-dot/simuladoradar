@@ -89,6 +89,25 @@
             <div class="instr-fila"><span>Size (H):</span><span id="exAncho">—</span><span>Size (V):</span><span id="exAlto">—</span></div>
           </fieldset>
           <fieldset>
+            <legend>[ Wind ]</legend>
+            <div class="instr-fila"><span>Direction from:</span>
+              <input type="number" id="vientoDir" class="instr-num" min="0" max="359" step="5" value="0" /> °</div>
+            <div class="instr-fila"><span>Speed:</span>
+              <input type="number" id="vientoVel" class="instr-num" min="0" max="30" step="1" value="0" /> knt</div>
+            <p class="instr-desc">El viento cambia el retorno de mar (clutter) de los radares y lo marcan los anemómetros de las consolas.</p>
+          </fieldset>
+          <fieldset>
+            <legend>[ Drift ]</legend>
+            <div class="instr-fila"><span>Direction to:</span>
+              <input type="number" id="corrienteDir" class="instr-num" min="0" max="359" step="5" value="0" /> °</div>
+            <div class="instr-fila"><span>Speed:</span>
+              <input type="number" id="corrienteVel" class="instr-num" min="0" max="9" step="0.1" value="0" /> knt</div>
+            <p class="instr-desc">La corriente arrastra a los Own Ships y a los DT; los Targets corrigen el heading para no salirse de su derrota.</p>
+            <div class="instr-os-acciones"><button type="button" id="btnAmbiente">Aplicar</button></div>
+            <div class="instr-fila"><span>Vigente — viento:</span><span id="exViento">—</span></div>
+            <div class="instr-fila"><span>corriente:</span><span id="exCorriente">—</span></div>
+          </fieldset>
+          <fieldset>
             <legend>[ Session ]</legend>
             <div class="instr-fila"><span>Estado:</span><span id="estadoBadge">—</span></div>
             <p id="descripcionEl" class="instr-desc"></p>

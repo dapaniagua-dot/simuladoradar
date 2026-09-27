@@ -171,6 +171,7 @@ function conectarSocket(): void {
     cartaVista?.setBlancos(blancos);
     cartaVista?.setBuques(payload.buques);
     refrescarBlancos();
+    refrescarAmbiente(payload);
     refrescarMatriz();
     refrescarDatosOS();
   });
@@ -289,6 +290,16 @@ function cablearInterfaz(): void {
   el('btnAbrirEj').addEventListener('click', () => void abrirDialogoAbrir());
   el<HTMLDialogElement>('dlgGuardar').addEventListener('close', () => void guardarEjercicio());
   el('btnLimpiarEventos').addEventListener('click', () => { el('registroEventos').innerHTML = ''; });
+  el('btnAmbiente').addEventListener('click', () => {
+    if (!socket) {
+      alert('El viento y la corriente se fijan con la sesión abierta.');
+      return;
+    }
+    const n = (id: string) => Number(el<HTMLInputElement>(id).value) || 0;
+    const p = { windDirectionDeg: n('vientoDir'), windSpeedKn: n('vientoVel'), corrienteDeg: n('corrienteDir'), corrienteKn: n('corrienteVel') };
+    socket.emit('ambiente:set', p);
+    registrarEvento(`Viento ${p.windDirectionDeg}°/${p.windSpeedKn} kn · corriente hacia ${p.corrienteDeg}°/${p.corrienteKn} kn`);
+  });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && cartaVista?.estaUbicando()) cancelarUbicar();
     if (e.key === 'Escape' && cartaVista?.insercionActual()) cartaVista.cancelarInsercion();
@@ -677,15 +688,17 @@ addAlumnoForm.addEventListener('submit', async (e) => {
 // ----- Matriz CPA - TCPA -----------------------------------------------------------
 // Para cada par de buques: marcación y distancia actuales, y punto de máximo
 // acercamiento suponiendo que ambos mantienen rumbo y velocidad.
-type Movil = Pick<EstadoBuqueDTO, 'lat' | 'lon' | 'headingDeg' | 'velocidadKn'>;
+type Movil = Pick<EstadoBuqueDTO, 'lat' | 'lon' | 'headingDeg' | 'velocidadKn'> & { sogKn?: number; cogDeg?: number };
 
 function cpaEntre(a: Movil, b: Movil): { brg: number; rng: number; cpa: number; tcpaMin: number | null } {
   const cosLat = Math.cos((a.lat * Math.PI) / 180);
   const xE = (b.lon - a.lon) * 60 * cosLat;
   const yN = (b.lat - a.lat) * 60;
+  // CPA sobre el fondo: con corriente cuenta el movimiento real (COG/SOG).
   const vel = (x: Movil) => {
-    const r = (x.headingDeg * Math.PI) / 180;
-    return [Math.sin(r) * x.velocidadKn, Math.cos(r) * x.velocidadKn];
+    const r = ((x.cogDeg ?? x.headingDeg) * Math.PI) / 180;
+    const v = x.sogKn ?? x.velocidadKn;
+    return [Math.sin(r) * v, Math.cos(r) * v];
   };
   const [aE, aN] = vel(a);
   const [bE, bN] = vel(b);
@@ -737,6 +750,23 @@ function refrescarMatriz(): void {
 function etiqueta(id: string): string {
   const [tipo, n] = id.split('-');
   return `${tipo}-${String(n).padStart(2, '0')}`;
+}
+
+// ----- Viento y corriente ----------------------------------------------------------
+// Refleja los valores vigentes sin pisar el campo que se está editando.
+function refrescarAmbiente(t: TickPayload): void {
+  const a = t.ambiente;
+  if (!a) return;
+  const valores: [string, number][] = [
+    ['vientoDir', a.windDirectionDeg], ['vientoVel', a.windSpeedKn],
+    ['corrienteDir', a.corrienteDeg ?? 0], ['corrienteVel', a.corrienteKn ?? 0],
+  ];
+  for (const [id, v] of valores) {
+    const inp = el<HTMLInputElement>(id);
+    if (document.activeElement !== inp && !inp.dataset.editado) inp.value = String(Math.round(v * 10) / 10);
+  }
+  el('exViento').textContent = `${Math.round(a.windDirectionDeg)}° · ${a.windSpeedKn.toFixed(1)} kn`;
+  el('exCorriente').textContent = `${Math.round(a.corrienteDeg ?? 0)}° · ${(a.corrienteKn ?? 0).toFixed(1)} kn`;
 }
 
 // ----- Blancos: listas del panel ----------------------------------------------------

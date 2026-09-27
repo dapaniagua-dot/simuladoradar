@@ -33,6 +33,12 @@ export const datosEjercicioSchema = z.object({
     velKn: z.number().finite().min(0).max(40),
     waypoints: z.array(waypointSchema).max(50).optional(),
   })).max(50),
+  ambiente: z.object({
+    windSpeedKn: z.number().finite().min(0).max(30),
+    windDirectionDeg: z.number().finite(),
+    corrienteKn: z.number().finite().min(0).max(9),
+    corrienteDeg: z.number().finite(),
+  }).partial().optional(),
 });
 
 const guardarSchema = z.object({

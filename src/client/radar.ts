@@ -515,8 +515,9 @@ function actualizarDatos(): void {
   const velocidad = f?.log ? '—' : mio.velocidadKn.toFixed(1);
   el('hudHeading').textContent = rumbo;
   el('hudSpeed').textContent = velocidad;
-  el('hudCourse').textContent = rumbo;
-  el('hudOwnSpeed').textContent = velocidad;
+  // OWN SHIP muestra lo que da el GPS: rumbo y velocidad sobre el fondo.
+  el('hudCourse').textContent = f?.gps ? '—' : (mio.cogDeg ?? mio.headingDeg).toFixed(1);
+  el('hudOwnSpeed').textContent = f?.gps ? '—' : (mio.sogKn ?? mio.velocidadKn).toFixed(1);
   el('hudLat').textContent = f?.gps ? '—' : formatDMS(mio.lat, true);
   el('hudLon').textContent = f?.gps ? '—' : formatDMS(mio.lon, false);
   const hayFalla = !!f && (f.gps || f.giro || f.log || f.autopiloto || f.maquina || f.radar
@@ -593,6 +594,9 @@ function loop(): void {
   ppi?.draw(mio, [...contactos(), ...ecosFalsos()], cartaCache, config, arpaTargets, {
     fueraDeServicio: !!f?.radar,
     sectorCiegoDeg: f?.sectorCiegoDeg ?? 0,
+  }, {
+    kn: ultimoTick?.ambiente?.windSpeedKn ?? 0,
+    desdeDeg: ultimoTick?.ambiente?.windDirectionDeg ?? 0,
   });
   requestAnimationFrame(loop);
 }

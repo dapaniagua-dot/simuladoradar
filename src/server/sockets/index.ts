@@ -210,6 +210,18 @@ export function setupSockets(io: SocketIOServer, sessionMiddleware: RequestHandl
       if (ctx.role === 'alumno' || typeof p?.ownshipIndex !== 'number' || typeof p.tomar !== 'boolean') return;
       registry.obtener(ctx.sesionId)?.setControlInstructor(p.ownshipIndex, p.tomar);
     });
+    // ===== Viento y corriente (solo instructor) =====
+    socket.on('ambiente:set', (p: Record<string, unknown>) => {
+      if (ctx.role === 'alumno' || !p) return;
+      const mundo = registry.obtener(ctx.sesionId);
+      if (!mundo) return;
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+      mundo.setAmbiente({
+        windSpeedKn: num(p.windSpeedKn), windDirectionDeg: num(p.windDirectionDeg),
+        corrienteKn: num(p.corrienteKn), corrienteDeg: num(p.corrienteDeg),
+      });
+    });
+
     // ===== Ejercicios guardados =====
     // Foto de la situación actual (el instructor la guarda por la API).
     socket.on('ejercicio:exportar', (_: unknown, responder?: (datos: unknown) => void) => {
