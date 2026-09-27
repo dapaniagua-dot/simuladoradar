@@ -3,6 +3,7 @@ import { Reloj } from './aula/reloj.js';
 import { Telegrafo } from './aula/telegrafo.js';
 import { Navegador, type MarcaTraza, type ModoNavegador } from './aula/navegador.js';
 import { CANALES_VHF, type CanalVHF } from '../shared/types.js';
+import { VozVHF, conectarPTT } from './vhf/voz.js';
 import type {
   CartaParseada,
   EstadoBuqueDTO,
@@ -93,6 +94,10 @@ let navegador: Navegador | null = null;
 let observando = false;
 let ultimoTick: TickPayload | null = null;
 let socket: Socket | null = null;
+let voz: VozVHF | null = null;
+// Quién está hablando en un canal que se escucha (para el display del VHF).
+let vhfRx: string | null = null;
+let vhfTx = false;
 let telegrafo: Telegrafo | null = null;
 let dialRudderCmd: Reloj | null = null;
 let dialRudderAngle: Reloj | null = null;
@@ -328,6 +333,18 @@ function formatRumbo(deg: number): string {
 
 function conectarSocket(): void {
   socket = io({ auth: { sesionId, vista: 'aula' }, withCredentials: true });
+  voz = new VozVHF(socket, {
+    // El profesor observando ya escucha todo desde el Módulo Instructor.
+    escuchar: (canal) => vhfEncendido && !observando && (canal === canalActualVHF || canal === 16),
+    alRecibir: ({ canal, nombre, activo }) => {
+      vhfRx = activo ? `${canal === 16 && canalActualVHF !== 16 ? '16 ' : ''}${nombre}` : null;
+      pintarVHF();
+    },
+    alTransmitir: (activo) => {
+      vhfTx = activo;
+      pintarVHF();
+    },
+  });
   socket.on('connect', () => {
     connBadge.textContent = 'conectado';
     connBadge.className = 'badge badge-abierta';
@@ -357,7 +374,7 @@ function conectarSocket(): void {
     const list = mensajesVHFPorCanal.get(m.canal) ?? [];
     list.push(m);
     mensajesVHFPorCanal.set(m.canal, list);
-    if (m.canal === canalActualVHF && vhfEncendido) {
+    if ((m.canal === canalActualVHF || m.canal === 16) && vhfEncendido) {
       refrescarVHF();
       marcarNuevo('vhf');
     }
@@ -451,6 +468,23 @@ function cablearComunicaciones(): void {
   }
   pintarVHF();
 
+  // TRANSMIT del Melipal: se habla mientras está apretado (o la barra
+  // espaciadora, si no se está escribiendo).
+  const btnTransmit = document.getElementById('btnTransmit') as HTMLButtonElement;
+  conectarPTT(btnTransmit, () => {
+    if (!voz || !vhfEncendido || observando) return;
+    btnTransmit.classList.add('apretado');
+    void voz.iniciarTx(canalActualVHF).then((ok) => {
+      if (!ok) {
+        btnTransmit.classList.remove('apretado');
+        vhfLcdInfo.textContent = 'SIN MICRÓFONO';
+      }
+    });
+  }, () => {
+    btnTransmit.classList.remove('apretado');
+    voz?.detenerTx();
+  }, true);
+
   const form = document.getElementById('vhfForm') as HTMLFormElement;
   const input = document.getElementById('vhfInput') as HTMLInputElement;
   form.addEventListener('submit', (e) => {
@@ -470,6 +504,8 @@ function teclaVHF(tecla: string): void {
   if (tecla === 'onoff') {
     vhfEncendido = !vhfEncendido;
     vhfTecleo = '';
+    vhfRx = null;
+    if (!vhfEncendido) voz?.detenerTx();
   } else if (!vhfEncendido) {
     return;
   } else if (/^\d$/.test(tecla)) {
@@ -487,6 +523,12 @@ function teclaVHF(tecla: string): void {
   } else if (tecla === 'scan') {
     const i = CANALES_VHF.indexOf(canalActualVHF);
     cambiarCanal(CANALES_VHF[(i + 1) % CANALES_VHF.length]!);
+  } else if ((tecla === 'volmas' || tecla === 'volmenos') && voz) {
+    voz.setVolumen(voz.volumenActual + (tecla === 'volmas' ? 0.1 : -0.1));
+    vhfLcdInfo.textContent = `VOL ${Math.round(voz.volumenActual * 10)}`;
+  } else if (tecla === 'parlante' && voz) {
+    voz.setMudo(!voz.estaMudo);
+    vhfLcdInfo.textContent = voz.estaMudo ? 'PARLANTE OFF' : 'PARLANTE ON';
   }
   pintarVHF();
 }
@@ -500,6 +542,15 @@ function cambiarCanal(canal: CanalVHF): void {
 function pintarVHF(): void {
   vhfLcd.classList.toggle('apagado', !vhfEncendido);
   vhfCanalDisplay.textContent = vhfTecleo ? `${vhfTecleo}_` : String(canalActualVHF).padStart(2, '0');
+  const estado = document.getElementById('vhfTxEstado');
+  if (estado) {
+    estado.textContent = !vhfEncendido ? 'VHF apagado'
+      : vhfTx ? `● Transmitiendo en canal ${canalActualVHF}`
+      : vhfRx ? `Recibiendo: ${vhfRx}`
+      : 'Mantener TRANSMIT (o la barra espaciadora) para hablar';
+    estado.classList.toggle('tx', vhfTx);
+    estado.classList.toggle('rx', !vhfTx && !!vhfRx);
+  }
   (document.getElementById('vhfInput') as HTMLInputElement).disabled = !vhfEncendido;
 }
 
@@ -524,7 +575,9 @@ function marcarNuevo(tab: TabComm): void {
 
 function refrescarVHF(): void {
   const list = document.getElementById('vhfMessages') as HTMLDivElement;
-  const msgs = mensajesVHFPorCanal.get(canalActualVHF) ?? [];
+  // El canal 16 se oye en cualquier canal (manual del Melipal).
+  const msgs = [...(mensajesVHFPorCanal.get(canalActualVHF) ?? []),
+    ...(canalActualVHF === 16 ? [] : mensajesVHFPorCanal.get(16) ?? [])].sort((a, b) => a.ts - b.ts);
   list.innerHTML = msgs
     .slice(-50)
     .map((m) => `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> <strong>${escape(m.remitenteNombre)}:</strong> ${escape(m.texto)}</div>`)

@@ -309,6 +309,21 @@ export interface VHFTransmitPayload {
   texto: string;
 }
 
+// Voz por VHF (push-to-talk). El audio viaja en µ-law a 8 kHz; `id`
+// identifica la transmisión (socket del que habla).
+export interface VozInicioDTO {
+  id: string;
+  canal: CanalVHF;
+  nombre: string;
+}
+export interface VozPaqueteDTO {
+  id: string;
+  pcm: ArrayBuffer;
+}
+export interface VozFinDTO {
+  id: string;
+}
+
 export interface MensajeNavtex {
   id: string;
   texto: string;

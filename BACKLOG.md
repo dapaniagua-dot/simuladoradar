@@ -21,7 +21,7 @@ Orden acordado con Diego:
 Se dejaron a la vista para que las pantallas sean iguales al Melipal:
 
 - **Radar**: TRUE MOTION, CENTRE, OWN HISTORY, RADAR ONLY, AUTO ACQUIRE, GROUND STAB, INTERF REJECTION, RAIN, y las pestañas Navigation, Trial Maneuver, Track Zone, Map, Parallel Index y Reference Position. Los 4 sonidos de alarma del `SRadar.exe` ya están extraídos, falta identificar cuál es cuál.
-- **Consola**: PARAM ADJUST, ALARM, LOG FAIL y las teclas del VHF que no son de canal (Lock, SQL, Vol…).
+- **Consola**: PARAM ADJUST, ALARM, LOG FAIL y las teclas del VHF Lock, Prog, configuración, F/P, Full/Low y Squelch (Vol y parlante ya andan con la voz, D24).
 - **Carta del alumno**: abrir carta, overlay de radar, ARPA sobre la carta, preferencias.
 - **Instructor**: nuevo/abrir/guardar ejercicio, Replay, lluvias, boyas. Los textos siguen en inglés como en el original (Diego puede pedir pasarlos al castellano).
 

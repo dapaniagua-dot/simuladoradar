@@ -1,5 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { CartaInstructor } from './instructor/carta-instructor.js';
+import { VozVHF, conectarPTT } from './vhf/voz.js';
+import { CANALES_VHF, type CanalVHF } from '../shared/types.js';
 import type {
   ApiError,
   BlancoDTO,
@@ -39,6 +41,10 @@ let sesionId = 0;
 let sesion: Sesion | null = null;
 let cartaVista: CartaInstructor | null = null;
 let socket: Socket | null = null;
+let voz: VozVHF | null = null;
+let canalVHF: CanalVHF = 16;
+const hablando = new Map<string, string>(); // quién habla, para el estado del VHF
+let transmitiendo = false;
 let ultimoTick: TickPayload | null = null;
 let pausado = false;
 let userId = 0;
@@ -161,6 +167,23 @@ btnStop.addEventListener('click', async () => {
 // ----- Socket ----------------------------------------------------------------
 function conectarSocket(): void {
   socket = io({ auth: { sesionId, vista: 'instructor' }, withCredentials: true });
+  voz?.destruir();
+  hablando.clear();
+  voz = new VozVHF(socket, {
+    escuchar: (canal) => canal === canalVHF || canal === 16 || el<HTMLInputElement>('vhfEscucharTodos').checked,
+    alRecibir: ({ canal, nombre, activo }) => {
+      const clave = `${canal}|${nombre}`;
+      if (activo) {
+        hablando.set(clave, `CH ${canal} · ${nombre}`);
+        registrarEvento(`VHF voz CH ${canal}: ${nombre}`);
+      } else hablando.delete(clave);
+      pintarEstadoVHF();
+    },
+    alTransmitir: (activo) => {
+      transmitiendo = activo;
+      pintarEstadoVHF();
+    },
+  });
   socket.on('world:tick', (payload: TickPayload) => {
     ultimoTick = payload;
     if (payload.pausado !== pausado) {
@@ -187,21 +210,22 @@ function conectarSocket(): void {
   socket.on('traza:punto', (p: TrazaPuntoPayload) => cartaVista?.agregarPunto(p.ownshipIndex, p.punto));
   socket.on('traza:reinicio', () => cartaVista?.setTrazas({}));
   socket.on('session:closed', () => {
+    voz?.destruir();
+    voz = null;
     socket?.disconnect();
     socket = null;
     void loadSesion();
   });
   socket.on('chat:snapshot', (snap: { vhf: MensajeVHF[]; navtex: MensajeNavtex[]; privados: MensajePrivado[] }) => {
-    mensajesVHF.splice(0, mensajesVHF.length, ...snap.vhf.filter((m) => m.canal === 16));
+    mensajesVHF.splice(0, mensajesVHF.length, ...snap.vhf);
     mensajesNavtex.splice(0, mensajesNavtex.length, ...snap.navtex);
     mensajesPrivados.splice(0, mensajesPrivados.length, ...snap.privados);
     refrescarComms();
   });
   socket.on('vhf:message', (m: MensajeVHF) => {
-    if (m.canal !== 16) return; // por ahora el profesor escucha solo canal 16
     mensajesVHF.push(m);
     refrescarComms();
-    registrarEvento(`VHF ${m.remitenteNombre}`);
+    registrarEvento(`VHF CH ${m.canal} ${m.remitenteNombre}`);
   });
   socket.on('navtex:message', (m: MensajeNavtex) => {
     mensajesNavtex.push(m);
@@ -1022,12 +1046,51 @@ function cablearComunicaciones(): void {
       input.value = '';
     });
   };
-  enviar('vhfForm', 'vhfInput', (texto) => socket?.emit('vhf:transmit', { canal: 16, texto }));
+  enviar('vhfForm', 'vhfInput', (texto) => socket?.emit('vhf:transmit', { canal: canalVHF, texto }));
+
+  // Canales como los círculos del Melipal: se elige uno y se habla con TRANSMIT.
+  const canales = el('vhfCanales');
+  for (const c of CANALES_VHF) {
+    const lbl = document.createElement('label');
+    lbl.innerHTML = `<input type="radio" name="vhfCanal" value="${c}" ${c === canalVHF ? 'checked' : ''} /> ${c}`;
+    lbl.querySelector('input')!.addEventListener('change', () => {
+      canalVHF = c;
+      el<HTMLInputElement>('vhfInput').placeholder = `Transmisión por VHF canal ${c}...`;
+    });
+    canales.appendChild(lbl);
+  }
+  el<HTMLInputElement>('vhfInput').placeholder = `Transmisión por VHF canal ${canalVHF}...`;
+  const btnTransmit = el<HTMLButtonElement>('btnTransmit');
+  conectarPTT(btnTransmit, () => {
+    if (!voz) {
+      el('vhfTxEstado').textContent = 'Disponible con la sesión abierta.';
+      return;
+    }
+    btnTransmit.classList.add('apretado');
+    void voz.iniciarTx(canalVHF).then((ok) => {
+      if (ok) return;
+      btnTransmit.classList.remove('apretado');
+      el('vhfTxEstado').textContent = 'No hay micrófono o el navegador no dio permiso.';
+    });
+  }, () => {
+    btnTransmit.classList.remove('apretado');
+    voz?.detenerTx();
+  });
+  pintarEstadoVHF();
   enviar('navtexForm', 'navtexInput', (texto) => socket?.emit('navtex:send', { texto }));
   enviar('dmForm', 'dmInput', (texto) => {
     const para = Number(el<HTMLSelectElement>('dmDestino').value);
     if (Number.isFinite(para) && para > 0) socket?.emit('dm:send', { paraUserId: para, texto });
   });
+}
+
+function pintarEstadoVHF(): void {
+  const estado = el('vhfTxEstado');
+  estado.textContent = transmitiendo ? `● Transmitiendo en canal ${canalVHF}`
+    : hablando.size > 0 ? `Recibiendo: ${[...hablando.values()].join(', ')}`
+    : '';
+  estado.classList.toggle('tx', transmitiendo);
+  estado.classList.toggle('rx', !transmitiendo && hablando.size > 0);
 }
 
 function refrescarDmDestinos(): void {
@@ -1054,7 +1117,7 @@ function refrescarComms(): void {
     lista.scrollTop = lista.scrollHeight;
   };
   pintar('vhfMessages', mensajesVHF.slice(-50).map((m) =>
-    `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> <strong>${escape(m.remitenteNombre)}:</strong> ${escape(m.texto)}</div>`));
+    `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> [${m.canal}] <strong>${escape(m.remitenteNombre)}:</strong> ${escape(m.texto)}</div>`));
   pintar('navtexMessages', mensajesNavtex.slice(-30).map((m) =>
     `<div class="comm-item"><span class="comm-time">${formatHora(m.ts)}</span> ${escape(m.texto)}</div>`));
   pintar('dmMessages', mensajesPrivados.slice(-30).map((m) =>

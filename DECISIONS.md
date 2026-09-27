@@ -284,6 +284,19 @@ Con cualquier falla se enciende la lámpara **ALARM** de la consola y **SYSTEM A
 
 ---
 
+## D24. VHF por voz
+
+**Decidido (2026-09-27, pedido de Diego):** el VHF funciona **por voz** como en el Melipal (manual, "Comunicador VHF" y "Lengüeta de Comunicación VHF"): se habla mientras se mantiene apretado **TRANSMIT** (el botón original `BV-TXU/TXD`). Quien está en el mismo canal escucha, y **el canal 16 lo escuchan todos**, estén en el canal que estén.
+
+- **Cómo viaja el audio:** por el mismo Socket.IO de la sesión, sin servidores extra. El micrófono se baja a 8 kHz y se codifica en µ-law (unos 8 kB/s por persona que habla, calidad de radio) y se reproduce filtrado a la banda de voz (300 a 3000 Hz), con el "shhh" del squelch al soltar. El servidor solo reenvía; cada puesto decide qué escucha. Se descartó WebRTC: da menos demora pero necesita servidores TURN para alumnos detrás de routers hogareños, y para una radio half-duplex 0,2 s de demora no molestan.
+- **Alumno:** botón TRANSMIT debajo del panel de mensajes, o la **barra espaciadora** (salvo cuando está escribiendo). El display del VHF y la línea de estado muestran TX / RX y quién habla. Ahora también andan las teclas **Vol +/−** y **parlante** (mute) del VHF 3001. Con la radio apagada no escucha ni transmite.
+- **Instructor:** en la sección VHF elige el canal (círculos, como el Melipal) y habla con TRANSMIT. Por defecto **escucha todos los canales** (se puede destildar para oír solo el suyo y el 16). Cada transmisión queda en el registro de eventos.
+- **Límites:** una transmisión se corta sola al minuto. El micrófono queda abierto 1 minuto después de hablar (para no cortar el principio de la siguiente) y después se libera. El navegador pide permiso de micrófono la primera vez; hace falta HTTPS (Railway lo tiene) o localhost.
+- El chat de texto del VHF sigue, como respaldo; el canal 16 también se ve desde cualquier canal.
+- El profesor en modo observador no escucha la voz en esa ventana (ya la oye en el Módulo Instructor).
+
+---
+
 ## Cosas que NO decidí (pendientes de Diego)
 
 1. **Cuenta de Neon vs Railway para Postgres en dev**: dejé documentadas ambas opciones. Diego elige cuando vuelva.

@@ -180,7 +180,14 @@
         <div class="instr-seccion-cuerpo">
           <p class="instr-desc" id="commAviso">Disponible con la sesión abierta.</p>
           <fieldset>
-            <legend>[ VHF canal 16 ]</legend>
+            <legend>[ VHF ]</legend>
+            <p class="instr-desc">Elegí el canal y mantené apretado TRANSMIT para hablar. El 16 lo escuchan todos los puestos.</p>
+            <div class="instr-canales" id="vhfCanales" role="radiogroup" aria-label="Canal VHF"></div>
+            <div class="instr-fila">
+              <button type="button" class="vhf-transmit" id="btnTransmit" aria-label="Transmit: mantener apretado para hablar"></button>
+              <span id="vhfTxEstado" class="vhf-tx-estado instr"></span>
+            </div>
+            <label class="instr-check"><input type="checkbox" id="vhfEscucharTodos" checked /> Escuchar todos los canales</label>
             <div id="vhfMessages" class="comm-list instr-comm"></div>
             <form id="vhfForm" class="comm-input">
               <input type="text" id="vhfInput" maxlength="500" placeholder="Transmisión por VHF..." />
