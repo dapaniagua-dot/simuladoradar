@@ -48,8 +48,10 @@ CAMPOS_FINALES = ['Archivo_imagen', 'Archivo_modelo3d'] + [
     f'Punto_{i}_amarre_{e}' for i in range(1, 9) for e in 'xy'
 ] + ['Peso_ancla', 'Carga_rotura_ancla', 'Peso_cadena_ancla', 'Cantidad_anclas']
 
-# No tiene sentido como buque propio.
-EXCLUIDOS = {'HELI'}
+# Solo los buques de río que se usan en los cursos de la ENF (confirmado por
+# el profesor, 2026-09-28). El resto de la flota (navales, pesqueros de mar,
+# mercantes de ultramar, lanchas rápidas) no se importa.
+BUQUES_ENF = ['BALI', 'REMO', 'GANG', 'TAN1', 'TAN2', 'CAU']
 
 
 def leer(ruta: Path) -> list[dict]:
@@ -116,7 +118,8 @@ def exportar(b: dict) -> dict:
 
 def main() -> None:
     origen = Path(sys.argv[1]) if len(sys.argv) > 1 else ORIGEN_DEFAULT
-    buques = [exportar(b) for b in leer(origen / 'Instructor' / 'Data' / 'fleet.cfg') if b['sigla'] not in EXCLUIDOS]
+    todos = {b['sigla']: b for b in leer(origen / 'Instructor' / 'Data' / 'fleet.cfg')}
+    buques = [exportar(todos[s]) for s in BUQUES_ENF]
     cuerpo = json.dumps(buques, ensure_ascii=False, indent=2)
     DESTINO.write_text(
         '// GENERADO por scripts/importar-flota-melipal.py a partir del fleet.cfg\n'

@@ -297,18 +297,19 @@ Con cualquier falla se enciende la lámpara **ALARM** de la consola y **SYSTEM A
 
 ---
 
-## D25. Flota del Melipal: 21 tipos de buque
+## D25. Flota del Melipal: los buques de río de la ENF
 
-**Decidido (2026-09-27):** los Own Ships pueden ser cualquiera de los 21 buques del `fleet.cfg` del Melipal (el helicóptero no). El instructor lo elige en la ficha de cada Own Ship ("Ship:") con la sesión abierta, y se guarda con el ejercicio.
+**Decidido (2026-09-27, ajustado el 2026-09-28 con Diego):** los Own Ships pueden ser cualquiera de los **seis buques de río** del `fleet.cfg` que se usan en los cursos de la ENF (confirmado por el profesor): **Balizador** (por defecto), **Remolcador**, **Ganguil**, **Halcón del Sur**, **Antares** y **Cau Cau**. El resto de la flota (Meko, Patagonia, pesqueros de mar, mercantes de ultramar, lanchas rápidas) no se importa. El instructor elige el buque en la ficha de cada Own Ship ("Ship:") con la sesión abierta, y se guarda con el ejercicio.
+
+- **Por defecto, el Balizador:** tamaño medio (53 m) y dos máquinas, así el telégrafo doble de la consola tiene sentido. El Meko 140 del MVP ya no está en la lista, pero sigue siendo la referencia de la escala.
 
 - **Importación:** `scripts/importar-flota-melipal.py` genera `src/shared/flota-melipal.ts`. El orden real de los campos del `fleet.cfg` no es el de `Fleet.txt` (2002): sale de `Parametros.ini` del "Generador de archivo fleet.cfg" (`Utils/instalador fleet_cfg.exe`), que describe los ~110 campos.
 - **Qué se usa:** eslora, manga, calado, desplazamiento, velocidad máxima y mínima, RPM de cada posición del telégrafo, cantidad de máquinas, timón máximo y velocidad del timón (`Angulo_Dot_Max`).
 - **Qué NO se usa:** las derivadas hidrodinámicas (Yv, Yr, Nv, Nr y sus "dot"), la hélice y el timón detallados. El `fleet.cfg` trae los valores pero no las ecuaciones del motor de INVAP (quedaron en el .exe). Probadas en el modelo lineal estándar, las del Meko 140 dan un radio de giro de 50 m o de casi 2 km según cómo se interpreten, y en varios buques están copiadas de otro (Meko 360 y Patagonia = Meko 140; San Salvador tiene Nr = -50).
-- **Física:** la misma simple de siempre, con valores por buque. El **Meko 140 no cambia** (es la referencia ya probada). Los demás se escalan desde él: arrancada/parada con desplazamiento^(1/3) / velocidad máxima (coeficiente del Almirantazgo), giro con velocidad / eslora, giro por máquinas opuestas con 1 / eslora (0 si tiene una sola máquina), velocidad del timón proporcional a `Angulo_Dot_Max`. La velocidad de cada posición del telégrafo es proporcional a sus RPM (hélice de paso fijo); el Meko 140 conserva su tabla. Topes: giro ≤ 8°/s y arrancada ≥ 5 s, para las lanchas rápidas.
+- **Física:** la misma simple de siempre, con valores por buque, escalados desde el Meko 140 del MVP (la referencia ya probada): arrancada/parada con desplazamiento^(1/3) / velocidad máxima (coeficiente del Almirantazgo), giro con velocidad / eslora, giro por máquinas opuestas con 1 / eslora (0 si tiene una sola máquina), velocidad del timón proporcional a `Angulo_Dot_Max`. La velocidad de cada posición del telégrafo es proporcional a sus RPM (hélice de paso fijo). Topes: giro ≤ 8°/s y arrancada ≥ 5 s, por si se suma un buque muy chico.
 - **Una sola máquina:** las dos palancas del telégrafo se mueven juntas.
-- **Provisorios:** todos menos el Meko 140 se muestran con `*` hasta calibrarlos con mediciones en el Melipal de escritorio (`docs/calibracion-flota.md`).
-- **Dato raro del original:** el AluCat tiene Manoeuvring en 156 RPM y Full Ahead en 2800 (seguramente 1560). Se dejó como viene.
-- **A revisar en la calibración:** con la física actual el Meko 140 gira con un radio de ~5,5 esloras a timón 35°; un buque real anda por las 2.
+- **Provisorios:** los seis quedan provisorios hasta calibrarlos con mediciones en el Melipal de escritorio (`docs/calibracion-flota.md`).
+- **A revisar en la calibración:** con la escala actual todos giran con un radio de ~5,5 esloras a timón 35° (lo que heredan del Meko 140 del MVP); un buque real anda por las 2.
 
 ---
 

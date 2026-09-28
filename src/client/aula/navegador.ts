@@ -27,7 +27,7 @@ export interface MarcaTraza {
 const COLOR_TRAZA = '#800080';
 const COLOR_VECTOR = '#800080';
 const COLOR_HERRAMIENTAS = '#800080';
-const eslora = (sigla: string) => FLOTA_MELIPAL.find((f) => f.sigla === sigla)?.esloraM ?? 92;
+const eslora = (sigla: string) => FLOTA_MELIPAL.find((f) => f.sigla === sigla)?.esloraM ?? 53;
 
 export class Navegador extends VistaCarta {
   modo: ModoNavegador = 'relative';

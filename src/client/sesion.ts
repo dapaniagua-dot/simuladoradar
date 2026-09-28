@@ -443,8 +443,8 @@ async function loadParticipaciones(): Promise<void> {
       ${sesion?.estado === 'abierta' ? `
       <div class="instr-fila">
         <span>Ship:</span>
-        <select data-modelo title="Tipo de buque (flota del Melipal). * = comportamiento provisorio, falta calibrar con el Melipal">
-          ${FLOTA_MELIPAL.map((f) => `<option value="${f.sigla}">${f.sigla === 'M140' ? '' : '* '}${escape(f.nombre)} (${f.esloraM} m, ${f.velMaxKn} kn)</option>`).join('')}
+        <select data-modelo title="Tipo de buque (flota del Melipal). Comportamiento provisorio hasta calibrarlo con el Melipal">
+          ${FLOTA_MELIPAL.map((f) => `<option value="${f.sigla}">${escape(f.nombre)} (${f.esloraM} m, ${f.velMaxKn} kn)</option>`).join('')}
         </select>
       </div>
       <div class="instr-os-vivo">

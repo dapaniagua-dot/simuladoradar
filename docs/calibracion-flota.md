@@ -1,12 +1,19 @@
 # Calibración de la flota contra el Melipal
 
-La versión web ya tiene los 21 buques de la flota del Melipal (del `fleet.cfg`). El **Meko 140** se comporta como veníamos probando. Los demás están **escalados** a partir del Meko 140 según su eslora, desplazamiento y velocidad, y en el Módulo Instructor aparecen con un `*` porque su comportamiento es provisorio.
+La versión web tiene los seis buques de río de la flota del Melipal que se usan en la ENF (del `fleet.cfg`). Su comportamiento está **escalado** a partir del Meko 140 que usábamos en las primeras versiones, según la eslora, el desplazamiento y la velocidad de cada uno, y es provisorio hasta medirlos en el Melipal.
 
 Para que cada buque maniobre como en el Melipal hacen falta unas pocas mediciones en el simulador de escritorio. Con estos números se ajustan cinco valores por buque: la arrancada, la parada, el giro, el giro con máquinas opuestas y la velocidad del timón.
 
 ## Qué buques medir
 
-Primero los que se usan en los cursos de la ENF. No hace falta medir los 21.
+Los seis de la ENF, en este orden (el primero es el que usa el simulador por defecto):
+
+1. Balizador
+2. Remolcador
+3. Ganguil
+4. Halcón del Sur
+5. Antares
+6. Cau Cau
 
 ## Pruebas por buque
 

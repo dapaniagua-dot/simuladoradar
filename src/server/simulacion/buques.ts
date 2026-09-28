@@ -1,5 +1,6 @@
-// Catálogo de modelos de buques disponibles para los Own Ships: los 21 de la
-// flota del Melipal (fleet.cfg, importados por scripts/importar-flota-melipal.py).
+// Catálogo de modelos de buques disponibles para los Own Ships: los buques de
+// río de la flota del Melipal que se usan en la ENF (fleet.cfg, importados por
+// scripts/importar-flota-melipal.py).
 //
 // La física sigue siendo la simple (una constante de tiempo para la velocidad
 // y una tasa de giro proporcional al timón), pero ahora cada buque tiene la
@@ -7,10 +8,10 @@
 // ecuaciones del motor de INVAP, y en varios buques están copiados de otro,
 // así que no se usan (DECISIONS.md, D25).
 //
-// El Meko 140 es la referencia: su comportamiento es el que ya se probó con
-// Diego y no cambia. Los demás se escalan desde él con sus datos reales
-// (eslora, desplazamiento, velocidad máxima, RPM, velocidad del timón) y
-// quedan como PROVISORIOS hasta calibrarlos contra el Melipal.
+// La escala parte del Meko 140, el único buque que tuvo el MVP y cuyo
+// comportamiento ya se probó con Diego. Cada buque se escala desde él con sus
+// datos reales (eslora, desplazamiento, velocidad máxima, RPM, velocidad del
+// timón) y queda PROVISORIO hasta calibrarlo contra el Melipal.
 
 import { FLOTA_MELIPAL } from '../../shared/flota-melipal.js';
 import type { BuqueFlota, PosicionTelegrafo, TelegrafoId } from '../../shared/types.js';
@@ -56,7 +57,7 @@ const NOMBRES_TELEGRAFO: Record<TelegrafoId, string> = {
 };
 const ORDEN_TELEGRAFO: TelegrafoId[] = ['FAS', 'HAS', 'SAS', 'DSAS', 'STOP', 'DSAH', 'SAH', 'HAH', 'MAN', 'FAH'];
 
-// Referencia M140, con los valores que ya se venían usando.
+// Referencia de escala: el Meko 140 del MVP, con los valores que se venían usando.
 const REF = {
   esloraM: 92,
   desplazamientoT: 1700,
@@ -67,14 +68,7 @@ const REF = {
   velTimonDegPorSeg: 4.0,
   velTimonFleet: 4.9,        // Angulo_Dot_Max del M140 en el fleet.cfg
 };
-// Velocidades del M140 por posición, con las dos máquinas iguales, elegidas a
-// mano en el MVP (no son lineales con las RPM). MAN: 27.5 × 320/400 = 22 kn.
-const VEL_M140: Record<TelegrafoId, number> = {
-  FAS: -4.4, HAS: -3.0, SAS: -2.0, DSAS: -1.0, STOP: 0, DSAH: 5, SAH: 10, HAH: 18, MAN: 22, FAH: 27.5,
-};
-
 function modeloDesdeFlota(f: BuqueFlota): ModeloBuque {
-  const esRef = f.sigla === 'M140';
   // Hélice de paso fijo: la velocidad es aproximadamente proporcional a las
   // RPM, avante hasta la máxima y atrás hasta la mínima del fleet.cfg.
   const velLineal = (rpm: number) =>
@@ -83,7 +77,7 @@ function modeloDesdeFlota(f: BuqueFlota): ModeloBuque {
     id,
     nombre: NOMBRES_TELEGRAFO[id],
     rpm: f.rpm[id],
-    velObjetivoKn: esRef ? VEL_M140[id] : Math.round(velLineal(f.rpm[id]) * 100) / 100,
+    velObjetivoKn: Math.round(velLineal(f.rpm[id]) * 100) / 100,
   }));
   // Escalas desde el M140:
   // - arrancada y parada: por el coeficiente del Almirantazgo, el tiempo
@@ -105,13 +99,14 @@ function modeloDesdeFlota(f: BuqueFlota): ModeloBuque {
     velMinKn: f.velMinKn,
     maxRudderDeg: f.anguloTimonMaxDeg,
     telegrafo,
-    tauVelocidad: esRef ? REF.tauVelocidad : Math.max(5, tau),
-    // Tope para las lanchas rápidas, que con la escala darían giros absurdos.
-    maxTurnRateDegPerSec: esRef ? REF.maxTurnRateDegPerSec : Math.min(8, giro),
+    tauVelocidad: Math.max(5, tau),
+    // Topes por si se suma un buque muy chico, que con la escala daría
+    // giros absurdos.
+    maxTurnRateDegPerSec: Math.min(8, giro),
     maxTurnRateDiferencialDegPerSec: f.motores < 2 ? 0
-      : esRef ? REF.diferencialDegPerSec : Math.min(2, REF.diferencialDegPerSec * (REF.esloraM / f.esloraM)),
+      : Math.min(2, REF.diferencialDegPerSec * (REF.esloraM / f.esloraM)),
     velTimonDegPorSeg: (REF.velTimonDegPorSeg * f.velTimonDegPorSeg) / REF.velTimonFleet,
-    calibrado: esRef,
+    calibrado: false,
   };
 }
 
@@ -125,5 +120,5 @@ export function getModeloPorSigla(sigla: string): ModeloBuque {
   return m;
 }
 
-export const M140 = getModeloPorSigla('M140');
-export const MODELO_DEFAULT = M140;
+// Por defecto el Balizador: tamaño medio y dos máquinas (usa el telégrafo doble).
+export const MODELO_DEFAULT = getModeloPorSigla('BALI');
